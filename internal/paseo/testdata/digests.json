@@ -1,0 +1,64 @@
+[
+ {
+  "json": "\"plain\"",
+  "dumps": "\"plain\"",
+  "indent": "\"plain\"",
+  "digest": "945603a8f587786b463c3f94fce115c0fae88fac2728cc96ddf5981cf7f61741"
+ },
+ {
+  "json": "\"caf\\u00e9 \\u2019 \\ud83d\\ude00 tab\\t nl\\n quote\\\" bs\\\\ ctl\\u0001 del\\u007f\"",
+  "dumps": "\"caf\\u00e9 \\u2019 \\ud83d\\ude00 tab\\t nl\\n quote\\\" bs\\\\ ctl\\u0001 del\\u007f\"",
+  "indent": "\"caf\\u00e9 \\u2019 \\ud83d\\ude00 tab\\t nl\\n quote\\\" bs\\\\ ctl\\u0001 del\\u007f\"",
+  "digest": "909098ddd73f99c41976b67032260871556002f53702f69aed328848e1a0c1ee"
+ },
+ {
+  "json": "[null, true, false, 0, -0, 1, -17, 12345678901234567890]",
+  "dumps": "[null, true, false, 0, 0, 1, -17, 12345678901234567890]",
+  "indent": "[\n  null,\n  true,\n  false,\n  0,\n  0,\n  1,\n  -17,\n  12345678901234567890\n]",
+  "digest": "19dcf6fba60cf88506d9718f0abf9621cdce7dde20c6767a8545c8f80a1592bf"
+ },
+ {
+  "json": "[0.0, -0.0, 1.0, 1.5, 0.1, 1e16, 1e15, 1234567890123456.7, 1e-5, 0.0001, 1e22, 2.5e-7, 1E2, -3.25e+3, 1e400]",
+  "dumps": "[0.0, -0.0, 1.0, 1.5, 0.1, 1e+16, 1000000000000000.0, 1234567890123456.8, 1e-05, 0.0001, 1e+22, 2.5e-07, 100.0, -3250.0, Infinity]",
+  "indent": "[\n  0.0,\n  -0.0,\n  1.0,\n  1.5,\n  0.1,\n  1e+16,\n  1000000000000000.0,\n  1234567890123456.8,\n  1e-05,\n  0.0001,\n  1e+22,\n  2.5e-07,\n  100.0,\n  -3250.0,\n  Infinity\n]",
+  "digest": "484cdde56e023a1cb60a50375c85c675c2c6ad03347b30463e0908432ea08380"
+ },
+ {
+  "json": "{\"b\": 1, \"a\": {\"z\": [1, {\"y\": null}], \"\\u00e9\": \"x\"}, \"A\": [], \"e\": {}}",
+  "dumps": "{\"A\": [], \"a\": {\"z\": [1, {\"y\": null}], \"\\u00e9\": \"x\"}, \"b\": 1, \"e\": {}}",
+  "indent": "{\n  \"b\": 1,\n  \"a\": {\n    \"z\": [\n      1,\n      {\n        \"y\": null\n      }\n    ],\n    \"\\u00e9\": \"x\"\n  },\n  \"A\": [],\n  \"e\": {}\n}",
+  "digest": "115f83fd282e2b31169faa6b9da16f971630383174f1e2a3d0f001064ee9e4cb"
+ },
+ {
+  "json": "{\"env\": {\"CODEX_HOME\": \"~/codex-x\", \"N\": 3, \"F\": 2.50, \"T\": true, \"U\": \"\\u00fc\"}, \"command\": [\"/x/bin/agy\", \"acp\"], \"model\": null}",
+  "dumps": "{\"command\": [\"/x/bin/agy\", \"acp\"], \"env\": {\"CODEX_HOME\": \"~/codex-x\", \"F\": 2.5, \"N\": 3, \"T\": true, \"U\": \"\\u00fc\"}, \"model\": null}",
+  "indent": "{\n  \"env\": {\n    \"CODEX_HOME\": \"~/codex-x\",\n    \"N\": 3,\n    \"F\": 2.5,\n    \"T\": true,\n    \"U\": \"\\u00fc\"\n  },\n  \"command\": [\n    \"/x/bin/agy\",\n    \"acp\"\n  ],\n  \"model\": null\n}",
+  "digest": "db353a27a183e42c728496fe9ce94b3d287b2525e7ff196db415c101b557df57"
+ },
+ {
+  "json": "[\"Usage limit reached\", \"2026-11-01T00:00:00.000Z\", 1789000000123]",
+  "dumps": "[\"Usage limit reached\", \"2026-11-01T00:00:00.000Z\", 1789000000123]",
+  "indent": "[\n  \"Usage limit reached\",\n  \"2026-11-01T00:00:00.000Z\",\n  1789000000123\n]",
+  "digest": "88982715d7fa1f467df56eda76ab85519a795b4f699a5972129e16ca7b4eabf0"
+ },
+ {
+  "json": "{\"version\": 1, \"enabled\": true, \"home\": \"/tmp/example-home/.paseo\", \"agent_id\": \"00000000-0000-4000-8000-000000000001\", \"binding\": {\"agent\": \"codex\", \"profile\": \"codex\", \"native_home\": \"/tmp/example-codex\", \"config_hash\": \"abc\", \"provider\": \"codex-work\", \"cwd\": \"/tmp/pr\\u00f6ject\"}, \"poll\": 300, \"status\": \"waiting for a quota-failed turn\", \"registered_at\": 1789000000.1234567, \"claimed_failure\": null}",
+  "dumps": "{\"agent_id\": \"00000000-0000-4000-8000-000000000001\", \"binding\": {\"agent\": \"codex\", \"config_hash\": \"abc\", \"cwd\": \"/tmp/pr\\u00f6ject\", \"native_home\": \"/tmp/example-codex\", \"profile\": \"codex\", \"provider\": \"codex-work\"}, \"claimed_failure\": null, \"enabled\": true, \"home\": \"/tmp/example-home/.paseo\", \"poll\": 300, \"registered_at\": 1789000000.1234567, \"status\": \"waiting for a quota-failed turn\", \"version\": 1}",
+  "indent": "{\n  \"version\": 1,\n  \"enabled\": true,\n  \"home\": \"/tmp/example-home/.paseo\",\n  \"agent_id\": \"00000000-0000-4000-8000-000000000001\",\n  \"binding\": {\n    \"agent\": \"codex\",\n    \"profile\": \"codex\",\n    \"native_home\": \"/tmp/example-codex\",\n    \"config_hash\": \"abc\",\n    \"provider\": \"codex-work\",\n    \"cwd\": \"/tmp/pr\\u00f6ject\"\n  },\n  \"poll\": 300,\n  \"status\": \"waiting for a quota-failed turn\",\n  \"registered_at\": 1789000000.1234567,\n  \"claimed_failure\": null\n}",
+  "digest": "0e34c6cf5daf9b94eebef2659c159f8a4bf8befc822f806654ee62e6db25db9e"
+ },
+ {
+  "json": "\"/tmp/example-home/.paseo\"",
+  "dumps": "\"/tmp/example-home/.paseo\"",
+  "indent": "\"/tmp/example-home/.paseo\"",
+  "digest": "ca16e65924ee62c819bd2aaac255d344e6b44402fb33dd88d298f34df3876719",
+  "file_prefix": "ca16e65924ee62c8"
+ },
+ {
+  "json": "\"/tmp/h\\u00e9me/.paseo\"",
+  "dumps": "\"/tmp/h\\u00e9me/.paseo\"",
+  "indent": "\"/tmp/h\\u00e9me/.paseo\"",
+  "digest": "cbb3f286db7fa896287d4c7220bb1d2ab1f8c8bcb29661489c520089f2c69abf",
+  "file_prefix": "cbb3f286db7fa896"
+ }
+]
