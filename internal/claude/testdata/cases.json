@@ -1,0 +1,165 @@
+{
+  "now": 1800000000,
+  "tz": "Asia/Kathmandu",
+  "cases": [
+    {
+      "name": "limits_array",
+      "label": "default",
+      "width": 100,
+      "keychain": {"service": "Claude Code-credentials", "account": "someuser"},
+      "token": {"source": "keychain:someuser", "expires_at_s": 1800018000, "subscription_type": "max"},
+      "result": {"source": "api", "from_cache": false, "stale_reason": null, "fetched_at_s": 1799999990.25,
+        "payload": {
+          "five_hour": {"utilization": 0.1, "resets_at": "2027-01-15T12:00:00+00:00"},
+          "extra_usage": {"is_enabled": false, "used_credits": null, "spend_limit_reached": false},
+          "limits": [
+            {"kind": "session", "group": "session", "percent": 42, "severity": "normal", "resets_at": "2027-01-15T11:30:00.123456+00:00", "scope": null, "is_active": true},
+            {"kind": "weekly_all", "group": "weekly", "percent": 77, "severity": "normal", "resets_at": "2027-01-20T09:00:00Z", "scope": null, "is_active": false},
+            {"kind": "weekly_scoped", "group": "weekly", "percent": 95, "severity": "warning", "resets_at": "2027-01-20T09:00:00Z", "scope": {"model": {"display_name": "Opus"}}, "is_active": true}
+          ]
+        }}
+    },
+    {
+      "name": "legacy_windows",
+      "label": "work",
+      "width": 100,
+      "keychain": {"service": "Claude Code-credentials-0a1b2c3d", "account": "someuser"},
+      "token": {"source": "env:CLAUDE_CODE_OAUTH_TOKEN_WORK", "expires_at_s": null, "subscription_type": null},
+      "result": {"source": "api", "from_cache": false, "stale_reason": null, "fetched_at_s": 1800000000,
+        "payload": {
+          "seven_day_sonnet": {"utilization": 12, "resets_at": "2027-01-18T08:00:00"},
+          "seven_day": {"utilization": 37.0, "resets_at": 1800300000, "limit_dollars": null, "remaining_dollars": null},
+          "five_hour": {"utilization": 0.52, "resets_at": 1800010000123, "limit_dollars": null, "remaining_dollars": null},
+          "seven_day_opus": null,
+          "zeta_window": {"utilization": 1.0, "resets_at": null},
+          "seven_day_oauth_apps": {"utilization": 3.55, "resets_at": null},
+          "iguana_necktie": null,
+          "extra_usage": {"is_enabled": true, "monthly_limit": 5000, "used_credits": 12.5, "currency": "USD", "daily": {"b": 1, "a": null}, "flags": [true, "x'y"], "disabled_reason": null}
+        }}
+    },
+    {
+      "name": "model_scoped_full",
+      "label": "work",
+      "width": 100,
+      "keychain": {"service": "Claude Code-credentials-0a1b2c3d", "account": "someuser"},
+      "token": {"source": "token-file:~/.keys/claude-code-oauth-work", "expires_at_s": null, "subscription_type": "team"},
+      "result": {"source": "api", "from_cache": false, "stale_reason": null, "fetched_at_s": 1800000000,
+        "payload": {
+          "limits": [
+            {"kind": "session", "group": "session", "percent": 10, "severity": "normal", "resets_at": "2027-01-15T12:00:00Z", "scope": null, "is_active": true},
+            {"kind": "weekly_all", "group": "weekly", "percent": 88, "severity": "normal", "resets_at": "2027-01-21T12:00:00Z", "scope": null, "is_active": false},
+            {"kind": "weekly_scoped", "group": "weekly", "percent": 100, "severity": "critical", "resets_at": "2027-01-21T12:00:00Z", "scope": {"model": {"display_name": "Sonnet"}}, "is_active": true},
+            {"kind": "monthly_thing", "group": "monthly", "percent": 5, "resets_at": null, "scope": {"model": {"display_name": "Haiku"}}},
+            {"group": "weekly", "percent": 1, "scope": null}
+          ]
+        }}
+    },
+    {
+      "name": "cloud_credit",
+      "label": "default",
+      "width": 100,
+      "keychain": {"service": "Claude Code-credentials", "account": "someuser"},
+      "token": {"source": "keychain", "expires_at_s": 1799992800, "subscription_type": "pro",
+                "warning": "Keychain item 'Claude Code-credentials' has no entry for account 'someuser' (this uid's passwd name); used an unfiltered match instead"},
+      "warnings": ["Keychain item 'Claude Code-credentials' has no entry for account 'someuser' (this uid's passwd name); used an unfiltered match instead"],
+      "result": {"source": "api", "from_cache": false, "stale_reason": null, "fetched_at_s": 1800000000,
+        "payload": {
+          "five_hour": {"utilization": 0.0, "resets_at": 1800003600, "limit_dollars": null, "used_dollars": null, "remaining_dollars": null, "locked_reason": null},
+          "seven_day": {"utilization": 91.25, "resets_at": 1800400000, "limit_dollars": null, "used_dollars": null, "remaining_dollars": null, "locked_reason": null},
+          "iguana_necktie": {"utilization": 0.8, "resets_at": 1800262900, "limit_dollars": 2500, "used_dollars": 1265.5, "remaining_dollars": 1234.5, "locked_reason": null}
+        }}
+    },
+    {
+      "name": "cloud_credit_spent_locked",
+      "label": "spent",
+      "width": 100,
+      "keychain": {"service": "Claude Code-credentials-0a1b2c3d", "account": "someuser"},
+      "token": {"source": "env:CLAUDE_CODE_OAUTH_TOKEN_SPENT", "expires_at_s": null, "subscription_type": "max"},
+      "result": {"source": "api", "from_cache": false, "stale_reason": null, "fetched_at_s": 1800000000,
+        "payload": {
+          "five_hour": {"utilization": 75, "resets_at": 1800003600},
+          "new_name": {"utilization": 1, "resets_at": 1799990000, "limit_dollars": 50, "used_dollars": 50, "remaining_dollars": 0, "locked_reason": "billing"}
+        }}
+    },
+    {
+      "name": "stale_cache_api",
+      "label": "work",
+      "width": 100,
+      "via_snapshot": {"from_daemon_cache": true, "stale_reason": "usage endpoint returned HTTP 429 (rate limited; the endpoint recovers slowly -- rely on the cache and avoid --refresh loops): {\"error\": {\"type\": \"rate_limit_error\"}}"},
+      "keychain": {"service": "Claude Code-credentials-0a1b2c3d", "account": "someuser"},
+      "token": {"source": "keychain:someuser", "expires_at_s": 1800090000, "subscription_type": "max"},
+      "result": {"source": "api-cache", "from_cache": true,
+        "stale_reason": "usage endpoint returned HTTP 429 (rate limited; the endpoint recovers slowly -- rely on the cache and avoid --refresh loops): {\"error\": {\"type\": \"rate_limit_error\"}}",
+        "fetched_at_s": 1799998000,
+        "payload": {
+          "limits": [
+            {"kind": "session", "group": "session", "percent": 100, "severity": "critical", "resets_at": "2027-01-15T10:00:00Z", "scope": null, "is_active": true},
+            {"kind": "weekly_all", "group": "weekly", "percent": 60, "severity": "normal", "resets_at": "2027-01-20T10:00:00Z", "scope": null, "is_active": false}
+          ]
+        }}
+    },
+    {
+      "name": "cached_fresh",
+      "label": "default",
+      "width": 100,
+      "via_snapshot": {"from_daemon_cache": true, "stale_reason": null},
+      "keychain": {"service": "Claude Code-credentials", "account": "someuser"},
+      "token": {"source": "keychain:someuser", "expires_at_s": 1800090000, "subscription_type": "max"},
+      "result": {"source": "api-cache", "from_cache": true, "stale_reason": null, "fetched_at_s": 1799999900,
+        "payload": {"five_hour": {"utilization": 5, "resets_at": 1800003600}}}
+    },
+    {
+      "name": "config_cache_rolled",
+      "label": "work",
+      "width": 60,
+      "keychain": {"service": "Claude Code-credentials-0a1b2c3d", "account": "someuser"},
+      "token": null,
+      "result": {"source": "config-cache", "from_cache": true,
+        "stale_reason": "no OAuth token found (tried CLAUDE_CODE_OAUTH_TOKEN_WORK, ~/.keys/claude-code-oauth-work, Keychain item 'Claude Code-credentials-0a1b2c3d' account 'someuser', and ~/.claude-work/.credentials.json); open `claude` (or run `/login` inside it) to refresh the token",
+        "fetched_at_s": 1799989200,
+        "payload": {
+          "five_hour": {"utilization": 100.0, "resets_at": "2027-01-15T07:00:00Z"},
+          "seven_day": {"utilization": 40, "resets_at": "2027-01-19T00:00:00Z"}
+        }}
+    },
+    {
+      "name": "config_cache_age_unknown",
+      "label": "other",
+      "width": 100,
+      "keychain": {"service": "Claude Code-credentials-0a1b2c3d", "account": "someuser"},
+      "token": null,
+      "result": {"source": "config-cache", "from_cache": true, "stale_reason": "usage endpoint unreachable: timed out",
+        "fetched_at_s": 0.0,
+        "payload": {"seven_day": {"utilization": 0.5, "resets_at": null}}}
+    },
+    {
+      "name": "error_profile",
+      "label": "work",
+      "width": 100,
+      "keychain": {"service": "Claude Code-credentials-0a1b2c3d", "account": "someuser"},
+      "error": "could not read the Keychain credential for account 'someuser': Keychain item 'Claude Code-credentials-0a1b2c3d' needs authorization and macOS would not show a prompt, because this process is not attached to the GUI session (security exit 36); run the report through `brishz`, whose shells are attached to the GUI session, or set a per-profile token variable (see docs/claude_code_usage.md)"
+    },
+    {
+      "name": "no_windows",
+      "label": "",
+      "width": 100,
+      "keychain": {"service": "Claude Code-credentials", "account": "someuser"},
+      "token": {"source": "env:CLAUDE_CODE_OAUTH_TOKEN_DEFAULT", "expires_at_s": null, "subscription_type": null},
+      "result": {"source": "api", "from_cache": false, "stale_reason": null, "fetched_at_s": 1800000000.5,
+        "payload": {"limits": [], "spend": {"percent": 3}}}
+    },
+    {
+      "name": "na_and_severity",
+      "label": "default",
+      "width": 40,
+      "keychain": {"service": "Claude Code-credentials", "account": "someuser"},
+      "token": {"source": "keychain:someuser", "expires_at_s": 1800090000, "subscription_type": "max"},
+      "result": {"source": "api", "from_cache": false, "stale_reason": null, "fetched_at_s": 1800000000,
+        "payload": {"limits": [
+          {"kind": "session", "group": "session", "percent": null, "severity": "critical", "resets_at": null, "scope": null, "is_active": null},
+          {"kind": "weekly_all", "group": "weekly", "percent": 99.96, "severity": "normal", "resets_at": 1800000000, "scope": null},
+          {"kind": "session", "percent": true, "resets_at": false}
+        ]}}
+    }
+  ]
+}

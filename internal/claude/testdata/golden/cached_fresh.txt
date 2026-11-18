@@ -1,0 +1,4 @@
+Claude Code plan usage [default]
+Plan: max (keychain:someuser)
+5h session: 5% used | resets in 1h (2027-01-15 14:45:00 +0545)
+Fetched: 2027-01-15 13:43:20 +0545 (cached)

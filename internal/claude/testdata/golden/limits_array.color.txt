@@ -1,0 +1,6 @@
+[1m[36mClaude Code plan usage [default][0m[0m
+Plan: [35mmax[0m (keychain:someuser)
+[1m5h session[0m: [32m42%[0m used | resets in 3h 30m (2027-01-15 17:15:00 +0545)
+[1m7d (all models)[0m: [33m77%[0m used | resets in 5d 1h (2027-01-20 14:45:00 +0545)
+[1m7d Opus[0m: [31m95%[0m used | resets in 5d 1h (2027-01-20 14:45:00 +0545) | [31mwarning[0m
+[2mFetched: 2027-01-15 13:44:50 +0545[0m

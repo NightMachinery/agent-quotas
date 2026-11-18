@@ -1,0 +1,4 @@
+[1m[36mClaude Code plan usage[0m[0m
+Plan: [35munknown[0m (env:CLAUDE_CODE_OAUTH_TOKEN_DEFAULT)
+[2mNo usage windows in response.[0m
+[2mFetched: 2027-01-15 13:45:00 +0545[0m

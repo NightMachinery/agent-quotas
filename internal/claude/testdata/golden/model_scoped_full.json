@@ -1,0 +1,119 @@
+{
+  "profile": "work",
+  "error": null,
+  "source": "api",
+  "keychain": {
+    "service": "Claude Code-credentials-0a1b2c3d",
+    "account": "someuser"
+  },
+  "warnings": [],
+  "plan": "team",
+  "token_source": "token-file:~/.keys/claude-code-oauth-work",
+  "token_expired": null,
+  "relogin": null,
+  "windows": [
+    {
+      "key": "session",
+      "label": "5h session",
+      "utilization_percent": 10.0,
+      "resets_at": 1800014400.0,
+      "resets_at_iso": "2027-01-15T17:45:00+05:45",
+      "severity": "normal",
+      "is_active": true
+    },
+    {
+      "key": "weekly_all",
+      "label": "7d (all models)",
+      "utilization_percent": 88.0,
+      "resets_at": 1800532800.0,
+      "resets_at_iso": "2027-01-21T17:45:00+05:45",
+      "severity": "normal",
+      "is_active": false
+    },
+    {
+      "key": "weekly_scoped",
+      "label": "7d Sonnet",
+      "utilization_percent": 100.0,
+      "resets_at": 1800532800.0,
+      "resets_at_iso": "2027-01-21T17:45:00+05:45",
+      "severity": "critical",
+      "is_active": true
+    },
+    {
+      "key": "monthly_thing",
+      "label": "monthly thing Haiku",
+      "utilization_percent": 5.0,
+      "resets_at": null,
+      "resets_at_iso": null,
+      "severity": null,
+      "is_active": null
+    },
+    {
+      "key": "weekly",
+      "label": "7d (scoped)",
+      "utilization_percent": 1.0,
+      "resets_at": null,
+      "resets_at_iso": null,
+      "severity": null,
+      "is_active": null
+    }
+  ],
+  "extra_usage": null,
+  "cloud_credit": null,
+  "cache": {
+    "from_cache": false,
+    "stale_reason": null,
+    "fetched_at": 1800000000
+  },
+  "raw": {
+    "limits": [
+      {
+        "kind": "session",
+        "group": "session",
+        "percent": 10,
+        "severity": "normal",
+        "resets_at": "2027-01-15T12:00:00Z",
+        "scope": null,
+        "is_active": true
+      },
+      {
+        "kind": "weekly_all",
+        "group": "weekly",
+        "percent": 88,
+        "severity": "normal",
+        "resets_at": "2027-01-21T12:00:00Z",
+        "scope": null,
+        "is_active": false
+      },
+      {
+        "kind": "weekly_scoped",
+        "group": "weekly",
+        "percent": 100,
+        "severity": "critical",
+        "resets_at": "2027-01-21T12:00:00Z",
+        "scope": {
+          "model": {
+            "display_name": "Sonnet"
+          }
+        },
+        "is_active": true
+      },
+      {
+        "kind": "monthly_thing",
+        "group": "monthly",
+        "percent": 5,
+        "resets_at": null,
+        "scope": {
+          "model": {
+            "display_name": "Haiku"
+          }
+        }
+      },
+      {
+        "group": "weekly",
+        "percent": 1,
+        "scope": null
+      }
+    ]
+  }
+}

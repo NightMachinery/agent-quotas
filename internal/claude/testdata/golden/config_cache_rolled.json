@@ -1,0 +1,51 @@
+{
+  "profile": "work",
+  "error": null,
+  "source": "config-cache",
+  "keychain": {
+    "service": "Claude Code-credentials-0a1b2c3d",
+    "account": "someuser"
+  },
+  "warnings": [],
+  "plan": null,
+  "token_source": null,
+  "token_expired": null,
+  "relogin": null,
+  "windows": [
+    {
+      "key": "five_hour",
+      "label": "5h session",
+      "utilization_percent": 100.0,
+      "resets_at": 1799996400.0,
+      "resets_at_iso": "2027-01-15T12:45:00+05:45",
+      "severity": null,
+      "is_active": null
+    },
+    {
+      "key": "seven_day",
+      "label": "7d (all models)",
+      "utilization_percent": 40.0,
+      "resets_at": 1800316800.0,
+      "resets_at_iso": "2027-01-19T05:45:00+05:45",
+      "severity": null,
+      "is_active": null
+    }
+  ],
+  "extra_usage": null,
+  "cloud_credit": null,
+  "cache": {
+    "from_cache": true,
+    "stale_reason": "no OAuth token found (tried CLAUDE_CODE_OAUTH_TOKEN_WORK, ~/.keys/claude-code-oauth-work, Keychain item 'Claude Code-credentials-0a1b2c3d' account 'someuser', and ~/.claude-work/.credentials.json); open `claude` (or run `/login` inside it) to refresh the token",
+    "fetched_at": 1799989200
+  },
+  "raw": {
+    "five_hour": {
+      "utilization": 100.0,
+      "resets_at": "2027-01-15T07:00:00Z"
+    },
+    "seven_day": {
+      "utilization": 40,
+      "resets_at": "2027-01-19T00:00:00Z"
+    }
+  }
+}

@@ -1,0 +1,11 @@
+Claude Code plan usage [work]
+Plan: unknown (config-cache)
+5h session: 100% used | resets 1h ago (2027-01-15 12:45:00 +0545) | (rolled over)
+7d (all models): 40% used | resets in 3d 16h (2027-01-19 05:45:00 +0545)
+Fetched: 2027-01-15 10:45:00 +0545 [local cache: 3h ago]
+  [no live data: no OAuth token found (tried
+  CLAUDE_CODE_OAUTH_TOKEN_WORK,
+  ~/.keys/claude-code-oauth-work, Keychain item 'Claude
+  Code-credentials-0a1b2c3d' account 'someuser', and
+  ~/.claude-work/.credentials.json); open `claude` (or run
+  `/login` inside it) to refresh the token]

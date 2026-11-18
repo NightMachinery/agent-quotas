@@ -1,0 +1,6 @@
+Claude Code plan usage [default]
+Plan: max (keychain:someuser)
+5h session: 42% used | resets in 3h 30m (2027-01-15 17:15:00 +0545)
+7d (all models): 77% used | resets in 5d 1h (2027-01-20 14:45:00 +0545)
+7d Opus: 95% used | resets in 5d 1h (2027-01-20 14:45:00 +0545) | warning
+Fetched: 2027-01-15 13:44:50 +0545

@@ -1,0 +1,28 @@
+{
+  "profile": null,
+  "error": null,
+  "source": "api",
+  "keychain": {
+    "service": "Claude Code-credentials",
+    "account": "someuser"
+  },
+  "warnings": [],
+  "plan": null,
+  "token_source": "env:CLAUDE_CODE_OAUTH_TOKEN_DEFAULT",
+  "token_expired": null,
+  "relogin": null,
+  "windows": [],
+  "extra_usage": null,
+  "cloud_credit": null,
+  "cache": {
+    "from_cache": false,
+    "stale_reason": null,
+    "fetched_at": 1800000000.5
+  },
+  "raw": {
+    "limits": [],
+    "spend": {
+      "percent": 3
+    }
+  }
+}

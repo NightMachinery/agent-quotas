@@ -1,0 +1,125 @@
+{
+  "profile": "work",
+  "error": null,
+  "source": "api",
+  "keychain": {
+    "service": "Claude Code-credentials-0a1b2c3d",
+    "account": "someuser"
+  },
+  "warnings": [],
+  "plan": null,
+  "token_source": "env:CLAUDE_CODE_OAUTH_TOKEN_WORK",
+  "token_expired": null,
+  "relogin": null,
+  "windows": [
+    {
+      "key": "five_hour",
+      "label": "5h session",
+      "utilization_percent": 52.0,
+      "resets_at": 1800010000.123,
+      "resets_at_iso": "2027-01-15T16:31:40.123000+05:45",
+      "severity": null,
+      "is_active": null
+    },
+    {
+      "key": "seven_day",
+      "label": "7d (all models)",
+      "utilization_percent": 37.0,
+      "resets_at": 1800300000.0,
+      "resets_at_iso": "2027-01-19T01:05:00+05:45",
+      "severity": null,
+      "is_active": null
+    },
+    {
+      "key": "seven_day_sonnet",
+      "label": "7d Sonnet",
+      "utilization_percent": 12.0,
+      "resets_at": 1800238500.0,
+      "resets_at_iso": "2027-01-18T08:00:00+05:45",
+      "severity": null,
+      "is_active": null
+    },
+    {
+      "key": "seven_day_oauth_apps",
+      "label": "seven day oauth apps",
+      "utilization_percent": 3.55,
+      "resets_at": null,
+      "resets_at_iso": null,
+      "severity": null,
+      "is_active": null
+    },
+    {
+      "key": "zeta_window",
+      "label": "zeta window",
+      "utilization_percent": 100.0,
+      "resets_at": null,
+      "resets_at_iso": null,
+      "severity": null,
+      "is_active": null
+    }
+  ],
+  "extra_usage": {
+    "is_enabled": true,
+    "monthly_limit": 5000,
+    "used_credits": 12.5,
+    "currency": "USD",
+    "daily": {
+      "b": 1,
+      "a": null
+    },
+    "flags": [
+      true,
+      "x'y"
+    ],
+    "disabled_reason": null
+  },
+  "cloud_credit": null,
+  "cache": {
+    "from_cache": false,
+    "stale_reason": null,
+    "fetched_at": 1800000000
+  },
+  "raw": {
+    "seven_day_sonnet": {
+      "utilization": 12,
+      "resets_at": "2027-01-18T08:00:00"
+    },
+    "seven_day": {
+      "utilization": 37.0,
+      "resets_at": 1800300000,
+      "limit_dollars": null,
+      "remaining_dollars": null
+    },
+    "five_hour": {
+      "utilization": 0.52,
+      "resets_at": 1800010000123,
+      "limit_dollars": null,
+      "remaining_dollars": null
+    },
+    "seven_day_opus": null,
+    "zeta_window": {
+      "utilization": 1.0,
+      "resets_at": null
+    },
+    "seven_day_oauth_apps": {
+      "utilization": 3.55,
+      "resets_at": null
+    },
+    "iguana_necktie": null,
+    "extra_usage": {
+      "is_enabled": true,
+      "monthly_limit": 5000,
+      "used_credits": 12.5,
+      "currency": "USD",
+      "daily": {
+        "b": 1,
+        "a": null
+      },
+      "flags": [
+        true,
+        "x'y"
+      ],
+      "disabled_reason": null
+    }
+  }
+}

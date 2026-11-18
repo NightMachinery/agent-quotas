@@ -1,0 +1,38 @@
+{
+  "profile": "default",
+  "error": null,
+  "source": "api-cache",
+  "keychain": {
+    "service": "Claude Code-credentials",
+    "account": "someuser"
+  },
+  "warnings": [],
+  "plan": "max",
+  "token_source": "keychain:someuser",
+  "token_expired": false,
+  "relogin": null,
+  "windows": [
+    {
+      "key": "five_hour",
+      "label": "5h session",
+      "utilization_percent": 5.0,
+      "resets_at": 1800003600.0,
+      "resets_at_iso": "2027-01-15T14:45:00+05:45",
+      "severity": null,
+      "is_active": null
+    }
+  ],
+  "extra_usage": null,
+  "cloud_credit": null,
+  "cache": {
+    "from_cache": true,
+    "stale_reason": null,
+    "fetched_at": 1799999900
+  },
+  "raw": {
+    "five_hour": {
+      "utilization": 5,
+      "resets_at": 1800003600
+    }
+  }
+}

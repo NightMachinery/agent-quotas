@@ -1,0 +1,4 @@
+[1m[38;2;80;220;255mClaude Code plan usage [spent][0m[0m
+Plan: [38;2;255;110;210mmax[0m (env:CLAUDE_CODE_OAUTH_TOKEN_SPENT)
+[1m5h session[0m: [38;2;245;195;80m75%[0m used | resets in 1h (2027-01-15 14:45:00 +0545)
+[38;2;135;145;160mFetched: 2027-01-15 13:45:00 +0545[0m

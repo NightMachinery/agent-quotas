@@ -1,0 +1,8 @@
+Claude Code plan usage [work]
+Plan: team (token-file:~/.keys/claude-code-oauth-work)
+5h session: 10% used | resets in 4h (2027-01-15 17:45:00 +0545)
+7d (all models): 88% used | resets in 6d 4h (2027-01-21 17:45:00 +0545)
+7d Sonnet: 100% used | resets in 6d 4h (2027-01-21 17:45:00 +0545) | critical
+monthly thing Haiku: 5% used | resets n/a
+7d (scoped): 1% used | resets n/a
+Fetched: 2027-01-15 13:45:00 +0545

@@ -1,0 +1,11 @@
+[1m[38;2;80;220;255mClaude Code plan usage [work][0m[0m
+Plan: [38;2;255;110;210munknown[0m (config-cache)
+[1m5h session[0m: [38;2;255;95;95m100%[0m used | resets 1h ago (2027-01-15 12:45:00 +0545) | [38;2;135;145;160m(rolled over)[0m
+[1m7d (all models)[0m: [38;2;80;220;135m40%[0m used | resets in 3d 16h (2027-01-19 05:45:00 +0545)
+Fetched: 2027-01-15 10:45:00 +0545 [38;2;245;195;80m[local cache: 3h ago][0m
+[38;2;255;95;95m  [no live data: no OAuth token found (tried[0m
+[38;2;255;95;95m  CLAUDE_CODE_OAUTH_TOKEN_WORK,[0m
+[38;2;255;95;95m  ~/.keys/claude-code-oauth-work, Keychain item 'Claude[0m
+[38;2;255;95;95m  Code-credentials-0a1b2c3d' account 'someuser', and[0m
+[38;2;255;95;95m  ~/.claude-work/.credentials.json); open `claude` (or run[0m
+[38;2;255;95;95m  `/login` inside it) to refresh the token][0m

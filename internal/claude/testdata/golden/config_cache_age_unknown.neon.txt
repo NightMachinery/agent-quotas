@@ -1,0 +1,5 @@
+[1m[38;2;80;220;255mClaude Code plan usage [other][0m[0m
+Plan: [38;2;255;110;210munknown[0m (config-cache)
+[1m7d (all models)[0m: [38;2;80;220;135m50%[0m used | resets [38;2;135;145;160mn/a[0m
+Fetched: 1970-01-01 05:30:00 +0530 [38;2;245;195;80m[local cache: age unknown][0m
+[38;2;255;95;95m  [no live data: usage endpoint unreachable: timed out][0m

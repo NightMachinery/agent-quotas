@@ -1,0 +1,4 @@
+Claude Code plan usage
+Plan: unknown (env:CLAUDE_CODE_OAUTH_TOKEN_DEFAULT)
+No usage windows in response.
+Fetched: 2027-01-15 13:45:00 +0545

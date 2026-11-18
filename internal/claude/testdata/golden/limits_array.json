@@ -1,0 +1,98 @@
+{
+  "profile": "default",
+  "error": null,
+  "source": "api",
+  "keychain": {
+    "service": "Claude Code-credentials",
+    "account": "someuser"
+  },
+  "warnings": [],
+  "plan": "max",
+  "token_source": "keychain:someuser",
+  "token_expired": false,
+  "relogin": null,
+  "windows": [
+    {
+      "key": "session",
+      "label": "5h session",
+      "utilization_percent": 42.0,
+      "resets_at": 1800012600.123456,
+      "resets_at_iso": "2027-01-15T17:15:00.123456+05:45",
+      "severity": "normal",
+      "is_active": true
+    },
+    {
+      "key": "weekly_all",
+      "label": "7d (all models)",
+      "utilization_percent": 77.0,
+      "resets_at": 1800435600.0,
+      "resets_at_iso": "2027-01-20T14:45:00+05:45",
+      "severity": "normal",
+      "is_active": false
+    },
+    {
+      "key": "weekly_scoped",
+      "label": "7d Opus",
+      "utilization_percent": 95.0,
+      "resets_at": 1800435600.0,
+      "resets_at_iso": "2027-01-20T14:45:00+05:45",
+      "severity": "warning",
+      "is_active": true
+    }
+  ],
+  "extra_usage": {
+    "is_enabled": false,
+    "used_credits": null,
+    "spend_limit_reached": false
+  },
+  "cloud_credit": null,
+  "cache": {
+    "from_cache": false,
+    "stale_reason": null,
+    "fetched_at": 1799999990.25
+  },
+  "raw": {
+    "five_hour": {
+      "utilization": 0.1,
+      "resets_at": "2027-01-15T12:00:00+00:00"
+    },
+    "extra_usage": {
+      "is_enabled": false,
+      "used_credits": null,
+      "spend_limit_reached": false
+    },
+    "limits": [
+      {
+        "kind": "session",
+        "group": "session",
+        "percent": 42,
+        "severity": "normal",
+        "resets_at": "2027-01-15T11:30:00.123456+00:00",
+        "scope": null,
+        "is_active": true
+      },
+      {
+        "kind": "weekly_all",
+        "group": "weekly",
+        "percent": 77,
+        "severity": "normal",
+        "resets_at": "2027-01-20T09:00:00Z",
+        "scope": null,
+        "is_active": false
+      },
+      {
+        "kind": "weekly_scoped",
+        "group": "weekly",
+        "percent": 95,
+        "severity": "warning",
+        "resets_at": "2027-01-20T09:00:00Z",
+        "scope": {
+          "model": {
+            "display_name": "Opus"
+          }
+        },
+        "is_active": true
+      }
+    ]
+  }
+}

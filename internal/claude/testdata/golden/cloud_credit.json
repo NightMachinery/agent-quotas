@@ -1,0 +1,78 @@
+{
+  "profile": "default",
+  "error": null,
+  "source": "api",
+  "keychain": {
+    "service": "Claude Code-credentials",
+    "account": "someuser"
+  },
+  "warnings": [
+    "Keychain item 'Claude Code-credentials' has no entry for account 'someuser' (this uid's passwd name); used an unfiltered match instead"
+  ],
+  "plan": "pro",
+  "token_source": "keychain",
+  "token_expired": true,
+  "relogin": null,
+  "windows": [
+    {
+      "key": "five_hour",
+      "label": "5h session",
+      "utilization_percent": 0.0,
+      "resets_at": 1800003600.0,
+      "resets_at_iso": "2027-01-15T14:45:00+05:45",
+      "severity": null,
+      "is_active": null
+    },
+    {
+      "key": "seven_day",
+      "label": "7d (all models)",
+      "utilization_percent": 91.25,
+      "resets_at": 1800400000.0,
+      "resets_at_iso": "2027-01-20T04:51:40+05:45",
+      "severity": null,
+      "is_active": null
+    }
+  ],
+  "extra_usage": null,
+  "cloud_credit": {
+    "key": "iguana_necktie",
+    "limit_dollars": 2500.0,
+    "used_dollars": 1265.5,
+    "remaining_dollars": 1234.5,
+    "expires_at": 1800262900.0,
+    "expires_at_iso": "2027-01-18T14:46:40+05:45",
+    "locked_reason": null,
+    "available": true
+  },
+  "cache": {
+    "from_cache": false,
+    "stale_reason": null,
+    "fetched_at": 1800000000
+  },
+  "raw": {
+    "five_hour": {
+      "utilization": 0.0,
+      "resets_at": 1800003600,
+      "limit_dollars": null,
+      "used_dollars": null,
+      "remaining_dollars": null,
+      "locked_reason": null
+    },
+    "seven_day": {
+      "utilization": 91.25,
+      "resets_at": 1800400000,
+      "limit_dollars": null,
+      "used_dollars": null,
+      "remaining_dollars": null,
+      "locked_reason": null
+    },
+    "iguana_necktie": {
+      "utilization": 0.8,
+      "resets_at": 1800262900,
+      "limit_dollars": 2500,
+      "used_dollars": 1265.5,
+      "remaining_dollars": 1234.5,
+      "locked_reason": null
+    }
+  }
+}

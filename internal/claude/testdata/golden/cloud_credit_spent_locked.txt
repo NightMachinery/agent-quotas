@@ -1,0 +1,4 @@
+Claude Code plan usage [spent]
+Plan: max (env:CLAUDE_CODE_OAUTH_TOKEN_SPENT)
+5h session: 75% used | resets in 1h (2027-01-15 14:45:00 +0545)
+Fetched: 2027-01-15 13:45:00 +0545

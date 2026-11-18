@@ -1,0 +1,5 @@
+Claude Code plan usage [other]
+Plan: unknown (config-cache)
+7d (all models): 50% used | resets n/a
+Fetched: 1970-01-01 05:30:00 +0530 [local cache: age unknown]
+  [no live data: usage endpoint unreachable: timed out]

@@ -1,0 +1,7 @@
+Claude Code plan usage [work]
+Plan: max (keychain:someuser)
+5h session: 100% used | resets in 2h (2027-01-15 15:45:00 +0545) | critical
+7d (all models): 60% used | resets in 5d 2h (2027-01-20 15:45:00 +0545)
+Fetched: 2027-01-15 13:11:40 +0545
+  [stale cache: usage endpoint returned HTTP 429 (rate limited; the endpoint recovers slowly -- rely
+  on the cache and avoid --refresh loops): {"error": {"type": "rate_limit_error"}}]

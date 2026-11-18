@@ -1,0 +1,9 @@
+{
+  "profile": "work",
+  "error": "could not read the Keychain credential for account 'someuser': Keychain item 'Claude Code-credentials-0a1b2c3d' needs authorization and macOS would not show a prompt, because this process is not attached to the GUI session (security exit 36); run the report through `brishz`, whose shells are attached to the GUI session, or set a per-profile token variable (see docs/claude_code_usage.md)",
+  "keychain": {
+    "service": "Claude Code-credentials-0a1b2c3d",
+    "account": "someuser"
+  },
+  "relogin": null
+}

@@ -1,0 +1,8 @@
+Claude Code plan usage [default]
+Plan: pro (keychain)
+OAuth token expired (2h ago); open `claude` (or run `/login` inside it) to refresh the token
+5h session: 0% used | resets in 1h (2027-01-15 14:45:00 +0545)
+7d (all models): 91.2% used | resets in 4d 15h 6m (2027-01-20 04:51:40 +0545)
+Cloud credit: $1,234.50 of $2,500.00 left, expires in 3d 1h 1m (2027-01-18 14:46:40 +0545)
+Keychain item 'Claude Code-credentials' has no entry for account 'someuser' (this uid's passwd name); used an unfiltered match instead
+Fetched: 2027-01-15 13:45:00 +0545

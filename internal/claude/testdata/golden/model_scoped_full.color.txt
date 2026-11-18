@@ -1,0 +1,8 @@
+[1m[36mClaude Code plan usage [work][0m[0m
+Plan: [35mteam[0m (token-file:~/.keys/claude-code-oauth-work)
+[1m5h session[0m: [32m10%[0m used | resets in 4h (2027-01-15 17:45:00 +0545)
+[1m7d (all models)[0m: [33m88%[0m used | resets in 6d 4h (2027-01-21 17:45:00 +0545)
+[1m7d Sonnet[0m: [31m100%[0m used | resets in 6d 4h (2027-01-21 17:45:00 +0545) | [31mcritical[0m
+[1mmonthly thing Haiku[0m: [32m5%[0m used | resets [2mn/a[0m
+[1m7d (scoped)[0m: [32m1%[0m used | resets [2mn/a[0m
+[2mFetched: 2027-01-15 13:45:00 +0545[0m

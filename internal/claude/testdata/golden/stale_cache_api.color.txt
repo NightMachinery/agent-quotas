@@ -1,0 +1,7 @@
+[1m[36mClaude Code plan usage [work][0m[0m
+Plan: [35mmax[0m (keychain:someuser)
+[1m5h session[0m: [31m100%[0m used | resets in 2h (2027-01-15 15:45:00 +0545) | [31mcritical[0m
+[1m7d (all models)[0m: [32m60%[0m used | resets in 5d 2h (2027-01-20 15:45:00 +0545)
+Fetched: 2027-01-15 13:11:40 +0545
+[31m  [stale cache: usage endpoint returned HTTP 429 (rate limited; the endpoint recovers slowly -- rely[0m
+[31m  on the cache and avoid --refresh loops): {"error": {"type": "rate_limit_error"}}][0m
