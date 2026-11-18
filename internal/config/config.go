@@ -61,8 +61,11 @@ type Agy struct {
 	Accounts          []AgyAccount `json:"accounts"`
 	StatuslineMaxAgeS *int         `json:"statusline_max_age_s,omitempty"`
 	MinIntervalS      int          `json:"min_interval_s,omitempty"`
-	TimeoutS          int          `json:"timeout_s,omitempty"`
-	Binary            string       `json:"agy_binary,omitempty"`
+	// SlowFallbackS is the least time between two unforced slow-path runs
+	// (a full agy start-up) for an account whose cache has nothing.
+	SlowFallbackS int    `json:"slow_fallback_s,omitempty"`
+	TimeoutS      int    `json:"timeout_s,omitempty"`
+	Binary        string `json:"agy_binary,omitempty"`
 }
 
 // Poll configures scheduling shared by all pollers.
@@ -250,6 +253,9 @@ func (c *Config) applyDefaults() {
 	if c.Agy.MinIntervalS == 0 {
 		c.Agy.MinIntervalS = 60
 	}
+	if c.Agy.SlowFallbackS == 0 {
+		c.Agy.SlowFallbackS = 3600
+	}
 	if c.Agy.TimeoutS == 0 {
 		c.Agy.TimeoutS = 90
 	}
@@ -284,7 +290,7 @@ func (c *Config) applyDefaults() {
 		c.Native.GraceS = 120
 	}
 	if c.Native.ActivitySlackS == 0 {
-		c.Native.ActivitySlackS = 300
+		c.Native.ActivitySlackS = 120
 	}
 }
 

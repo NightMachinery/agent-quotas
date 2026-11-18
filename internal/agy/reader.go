@@ -318,8 +318,8 @@ func (r *Reader) quota(ctx context.Context, a Account, force bool, now time.Time
 }
 
 // fallback is the slow path taken because the cache had nothing to serve.
-// It is said, never silent, and it runs at most once per min_interval per
-// account: the cache stays empty until agy runs, and every attempt is a
+// It is said, never silent, and it runs at most once per slow_fallback_s
+// (default an hour) per account: the cache stays empty until agy runs, and every attempt is a
 // full CLI start-up.
 func (r *Reader) fallback(ctx context.Context, a Account, now time.Time, why string) readResult {
 	if r.CacheOnly {
@@ -329,7 +329,7 @@ func (r *Reader) fallback(ctx context.Context, a Account, now time.Time, why str
 	r.mu.Lock()
 	last, ran := r.lastSlow[a.Name]
 	r.mu.Unlock()
-	if interval := time.Duration(r.cfg.Agy.MinIntervalS) * time.Second; ran && now.Sub(last) < interval && now.Sub(last) >= 0 {
+	if interval := time.Duration(r.cfg.Agy.SlowFallbackS) * time.Second; ran && now.Sub(last) < interval && now.Sub(last) >= 0 {
 		return readResult{exit: 1, notes: []model.Note{{Severity: model.Info, Text: why}},
 			err: fmt.Errorf("the cache has nothing to serve and the slow path already ran %s ago", ageFmt(int(now.Sub(last).Seconds())))}
 	}

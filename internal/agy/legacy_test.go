@@ -82,7 +82,7 @@ func newFixture(t *testing.T) *fixtureEnv {
 			{Name: "fm2", GeminiDir: filepath.Join(dir, "accounts", "fm2")},
 			{Name: "broke", GeminiDir: filepath.Join(dir, "accounts", "broke")},
 		},
-		StatuslineMaxAgeS: &maxAge, MinIntervalS: 60, TimeoutS: 90, Binary: "agy",
+		StatuslineMaxAgeS: &maxAge, MinIntervalS: 60, SlowFallbackS: 60, TimeoutS: 90, Binary: "agy",
 	}}
 	for _, name := range []string{"m", "cave", "broke"} {
 		a := ResolveAccount(cfg.Agy.Accounts[indexOf(cfg, name)])
@@ -301,7 +301,7 @@ func TestFallbackRules(t *testing.T) {
 	f := newFixture(t)
 	ctx := context.Background()
 	// cave has no cache: the slow path runs once, then not again within
-	// min_interval, because the cache it writes now serves.
+	// slow_fallback_s, because the cache it writes now serves.
 	if _, err := f.reader.Read(ctx, ref("cave"), at(1000)); err != nil || f.agy.count() != 1 {
 		t.Fatalf("first read: %v, %d calls", err, f.agy.count())
 	}
@@ -310,7 +310,7 @@ func TestFallbackRules(t *testing.T) {
 		t.Errorf("guarded fallback ran agy again: %v, %d calls", err, f.agy.count())
 	}
 	if _, err := f.reader.Read(ctx, ref("cave"), at(1061)); err != nil || f.agy.count() != 2 {
-		t.Errorf("fallback after min_interval: %v, %d calls", err, f.agy.count())
+		t.Errorf("fallback after slow_fallback_s: %v, %d calls", err, f.agy.count())
 	}
 	// Max age drops old buckets; an all-old cache falls back.
 	maxAge := 3600

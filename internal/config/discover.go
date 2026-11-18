@@ -57,7 +57,11 @@ func Discover(getenv func(string) string) *Config {
 				dir = filepath.Join(home, ".agy-accounts", name)
 			}
 		}
-		c.Agy.Accounts = append(c.Agy.Accounts, AgyAccount{Name: name, Label: getenv("AGY_ACCOUNT_LABEL_" + upper), GeminiDir: tilde(dir)})
+		acct := AgyAccount{Name: name, Label: getenv("AGY_ACCOUNT_LABEL_" + upper), GeminiDir: tilde(dir)}
+		if (name == "m" || name == "acc1") && getenv("AGY_MAIN_STATUS_CACHE_FILE") != "" {
+			acct.CacheFile = tilde(getenv("AGY_MAIN_STATUS_CACHE_FILE"))
+		}
+		c.Agy.Accounts = append(c.Agy.Accounts, acct)
 	}
 	c.Paseo.Homes = []string{"~/.paseo"}
 	return c
