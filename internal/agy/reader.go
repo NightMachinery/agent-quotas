@@ -123,9 +123,12 @@ func (r *Reader) Accounts(context.Context) ([]model.AccountRef, error) {
 
 // CacheFiles maps each account name to its statusline cache, for the
 // renderers' cache-age header (render.RenderAgy, render.Envelope).
-func (r *Reader) CacheFiles() map[string]string {
+func (r *Reader) CacheFiles() map[string]string { return CacheFiles(r.cfg) }
+
+// CacheFiles maps each configured account name to its statusline cache.
+func CacheFiles(cfg *config.Config) map[string]string {
 	out := map[string]string{}
-	for _, c := range r.cfg.Agy.Accounts {
+	for _, c := range cfg.Agy.Accounts {
 		a := ResolveAccount(c)
 		out[a.Name] = a.CacheFile
 	}
