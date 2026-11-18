@@ -17,7 +17,7 @@ import (
 var uuidRE = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
 
 const continueUsage = `usage: agent-quotas continue on|off|status [PASEO_AGENT_ID] [--home DIR] [--poll SECONDS] [--frontmost]
-       agent-quotas continue list [--prune]
+       agent-quotas continue list [--prune] [--paseo]
        agent-quotas continue stopped [--usable] [--home DIR]
        agent-quotas continue check [PASEO_AGENT_ID|SCOPE]
 
@@ -35,6 +35,7 @@ func cmdContinue(ctx context.Context, args []string) int {
 	frontmost := fs.Bool("frontmost", false, "native: resume by typing into whatever holds the keyboard")
 	usable := fs.Bool("usable", false, "stopped: only agents whose seat has quota left now")
 	prune := fs.Bool("prune", false, "list: forget native registrations whose session ended")
+	paseoOnly := fs.Bool("paseo", false, "list: only the Paseo rows (agent id, home, agent/profile, status; tab-separated)")
 	fs.Usage = func() { fmt.Fprintln(os.Stderr, continueUsage) }
 	pos, err := parseInterspersed(fs, args)
 	if err != nil || len(pos) == 0 {
@@ -93,6 +94,9 @@ func cmdContinue(ctx context.Context, args []string) int {
 		}
 		for _, row := range rows {
 			fmt.Println(row)
+		}
+		if *paseoOnly {
+			return exitOK
 		}
 		return nativeList(ctx, cfg, *prune)
 	case "stopped":

@@ -216,6 +216,9 @@ func nativeList(ctx context.Context, cfg *config.Config, prune bool) int {
 		fmt.Fprintln(os.Stderr, "agent-auto-continue-list: "+err.Error())
 		return exitFail
 	}
+	if len(ls) == 0 {
+		return exitOK // the Paseo rows above stay machine-readable
+	}
 	if out := native.FormatList(ls); out != "" {
 		fmt.Print(out)
 		if !strings.HasSuffix(out, "\n") {
