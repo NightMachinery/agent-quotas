@@ -1,0 +1,79 @@
+[1;34mClaude Code[0m  [2m───────────────────────────────────────────────────────────────────[0m
+
+[1mdefault[0m  ready        max  [2mcache 2m[0m
+  Claude           5h        [32m█████░░░░░[0m  [32m  52%[0m  resets in 1h 25m
+  Claude           weekly    [33m███████░░░[0m  [33m71.5%[0m  resets in 3d
+  Fable            weekly    [31m█████████░[0m  [31m  90%[0m  resets in 4d 7h
+  Monthly overage  Monthly…  [31m██████████[0m  [31m 100%[0m  resets in 20d
+[33m  Sonnet weekly: usage unavailable[0m
+[33m  Usage endpoint answered slowly[0m
+[2m  Relogin: claude /login[0m
+[2m  Extra usage: is enabled: True, monthly limit: 50.0, used credits: 12, spend l…[0m
+[2m  Cloud credit: $2,248.03 of $2,500.00 left, expires in 1d 2h (Thu 16 Nov 00:13…[0m
+
+[1mwork[0m     unavailable       [2m[0m
+[31m  ! Login required[0m
+
+[1mspare[0m    ready        pro  [2mcache age unknown (stale)[0m
+[33m  OAuth token expired; run the profile's login command[0m
+[33m  HTTP 429; serving cache[0m
+[33m  No usage windows reported[0m
+
+[1;34mStatus[0m  [2m────────────────────────────────────────────────────────────────────────[0m
+
+[31m  ! Unknown provider[0m
+
+[1;34mgemini[0m  [2m────────────────────────────────────────────────────────────────────────[0m
+
+[31m  ! Unknown provider[0m
+
+[1;34mCodex[0m  [2m─────────────────────────────────────────────────────────────────────────[0m
+
+[31m  ! Status lookup failed (exit 2)[0m
+
+[1;34mCodex[0m  [2m─────────────────────────────────────────────────────────────────────────[0m
+
+[1mLab workspace [研究][0m  ready        pro   [2mlive[0m  [2mmasked@example.test[0m
+  Codex        5h      [33m█████████░[0m  [33m88.2%[0m  resets in 2d 11h
+  Codex        weekly  [32m██████░░░░[0m  [32m  61%[0m  resets in 2d 11h
+  gpt-model-x  1d      [32m█░░░░░░░░░[0m  [32m   5%[0m  resets in 2d 11h
+  Reserve      weekly  [32m██░░░░░░░░[0m  [32m  20%[0m  resets in 2d 11h
+[2m  Reserve: available via gpt-reserve[0m
+[31m  Allowance blocked: spend limit; weekly at 100%[0m
+[2m  Reset credits: 2 available (Full reset, expires in 4d)[0m
+[2m  Credits: available (balance: 12.50)[0m
+
+[1mspare[0m                 ready        plus  [2mlive[0m
+[33m  Reserve: spent[0m
+[33m  No usage windows reported[0m
+
+[1mbroken[0m                unavailable        [2m[0m
+[31m  ! Account unavailable[0m
+
+[1msilent[0m                unavailable        [2m[0m
+[31m  ! Status lookup failed[0m
+[2m  All accounts: 2/3 usable[0m
+[2m  Average usage: weekly 61%, 5h 44.125%[0m
+[2m  First reset: 研究 in 1h[0m
+
+[1;34mAntigravity[0m  [2m───────────────────────────────────────────────────────────────────[0m
+
+[1mm[0m                 auth stored    Google AI Pro  [2mcache 2h, some un…[0m  [2mmasked@exam…[0m
+  Gemini          5h      [32m█░░░░░░░░░[0m  [32m   6%[0m  resets in 1h 25m
+  Gemini          weekly  [32m█░░░░░░░░░[0m  [32m   6%[0m  resets in 4d 7h
+  Gemini 4 Argon  5h      [32m███░░░░░░░[0m  [32m33.4%[0m  reset 1h ago
+  Gemini 4 Argon  weekly  [31m██████████[0m  [31m  95%[0m  resets in 12m
+  Claude/GPT      weekly  [33m████████░░[0m  [33m  75%[0m  resets in 2d 11h
+  Future          Daily   [32m░░░░░░░░░░[0m  [32m   0%[0m  reset unknown
+  Odd Pool        weekly  [31m██████████[0m  [31m 100%[0m  resets in 10m
+
+[1m研究 Café [cave][0m  signed in      Pro            [2mlive + cache age …[0m  [2manother-ver…[0m
+  Gemini          weekly  [33m███████░░░[0m  [33m  70%[0m  resets in 1d
+  Claude/GPT      5h      [32m█░░░░░░░░░[0m  [32m12.5%[0m  resets in 13m
+
+[1mfm2[0m               not signed in                 [2m[0m
+  agy-acc-login fm2
+
+[1mbroken[0m            auth stored                   [2mquota unavailable[0m
+[31m  ! Quota check failed (exit 124); file credentials exist, validity unverified[0m
+

@@ -1,0 +1,79 @@
+Claude Code  ───────────────────────────
+
+default  ready        max  cache 2m
+  Claude    5h        ███░░░    52%  resets in 1h 25m
+  Claude    weekly    ████░░  71.5%  resets in 3d
+  Fable     weekly    █████░    90%  resets in 4d 7h
+  Monthly…  Monthly…  ██████   100%  resets in 20d
+  Sonnet weekly: usage unavailable
+  Usage endpoint answered slowly
+  Relogin: claude /login
+  Extra usage: is enabled: True, monthl…
+  Cloud credit: $2,248.03 of $2,500.00 …
+
+work     unavailable
+  ! Login required
+
+spare    ready        pro  cache age un…
+  OAuth token expired; run the profile'…
+  HTTP 429; serving cache
+  No usage windows reported
+
+Status  ────────────────────────────────
+
+  ! Unknown provider
+
+gemini  ────────────────────────────────
+
+  ! Unknown provider
+
+Codex  ─────────────────────────────────
+
+  ! Status lookup failed (exit 2)
+
+Codex  ─────────────────────────────────
+
+Lab wor…  ready        pro   live  mask…
+  Codex     5h      █████░  88.2%  resets in 2d 11h
+  Codex     weekly  ████░░    61%  resets in 2d 11h
+  gpt-mod…  1d      ░░░░░░     5%  resets in 2d 11h
+  Reserve   weekly  █░░░░░    20%  resets in 2d 11h
+  Reserve: available via gpt-reserve
+  Allowance blocked: spend limit; weekl…
+  Reset credits: 2 available (Full rese…
+  Credits: available (balance: 12.50)
+
+spare     ready        plus  live
+  Reserve: spent
+  No usage windows reported
+
+broken    unavailable
+  ! Account unavailable
+
+silent    unavailable
+  ! Status lookup failed
+  All accounts: 2/3 usable
+  Average usage: weekly 61%, 5h 44.125%
+  First reset: 研究 in 1h
+
+Antigravity  ───────────────────────────
+
+m         auth stored    Google …  cache 2h, s…
+  Gemini    5h      ░░░░░░     6%  resets in 1h 25m
+  Gemini    weekly  ░░░░░░     6%  resets in 4d 7h
+  Gemini …  5h      ██░░░░  33.4%  reset 1h ago
+  Gemini …  weekly  ██████    95%  resets in 12m
+  Claude/…  weekly  █████░    75%  resets in 2d 11h
+  Future    Daily   ░░░░░░     0%  reset unknown
+  Odd Pool  weekly  ██████   100%  resets in 10m
+
+研究 Ca…  signed in      Pro       live + cach…
+  Gemini    weekly  ████░░    70%  resets in 1d
+  Claude/…  5h      █░░░░░  12.5%  resets in 13m
+
+fm2       not signed in
+  agy-acc-login fm2
+
+broken    auth stored              quota unava…
+  ! Quota check failed (exit 124); file…
+

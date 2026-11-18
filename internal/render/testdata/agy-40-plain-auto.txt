@@ -1,0 +1,18 @@
+m         auth stored    Google …  cache 2h, s…
+  Gemini    5h      ░░░░░░     6%  resets in 1h 25m
+  Gemini    weekly  ░░░░░░     6%  resets in 4d 7h
+  Gemini …  5h      ██░░░░  33.4%  reset 1h ago
+  Gemini …  weekly  ██████    95%  resets in 12m
+  Claude/…  weekly  █████░    75%  resets in 2d 11h
+  Future    Daily   ░░░░░░     0%  reset unknown
+  Odd Pool  weekly  ██████   100%  resets in 10m
+
+研究 Ca…  signed in      Pro       live + cach…
+  Gemini    weekly  ████░░    70%  resets in 1d
+  Claude/…  5h      █░░░░░  12.5%  resets in 13m
+
+fm2       not signed in
+  agy-acc-login fm2
+
+broken    auth stored              quota unava…
+  ! Quota check failed (exit 124); file…

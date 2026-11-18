@@ -1,0 +1,30 @@
+{
+ "account": {
+  "tier": "Google AI Pro"
+ },
+ "buckets": {
+  "gemini-weekly": {
+   "remaining_percent": 94,
+   "captured_at": 1699999850
+  },
+  "3p-weekly": {
+   "remaining_percent": 25,
+   "captured_at": 1699999970
+  },
+  "gemini-argon-wtu-weekly": {
+   "remaining_percent": 5,
+   "captured_at": 1699992800
+  },
+  "gemini-5h": {
+   "remaining_percent": 94,
+   "captured_at": 1699999900
+  },
+  "gemini-4-argon-5h": {
+   "remaining_percent": 66.65
+  },
+  "future-model-daily-limit": {
+   "remaining_percent": 100,
+   "captured_at": 1699999990
+  }
+ }
+}

@@ -1,0 +1,79 @@
+Claude Code  ───────────────────────────────────────────────────────────────────
+
+default  ready        max  cache 2m
+  Claude           5h        █████░░░░░    52%  resets in 1h 25m
+  Claude           weekly    ███████░░░  71.5%  resets in 3d
+  Fable            weekly    █████████░    90%  resets in 4d 7h
+  Monthly overage  Monthly…  ██████████   100%  resets in 20d
+  Sonnet weekly: usage unavailable
+  Usage endpoint answered slowly
+  Relogin: claude /login
+  Extra usage: is enabled: True, monthly limit: 50.0, used credits: 12, spend l…
+  Cloud credit: $2,248.03 of $2,500.00 left, expires in 1d 2h (Thu 16 Nov 00:13…
+
+work     unavailable
+  ! Login required
+
+spare    ready        pro  cache age unknown (stale)
+  OAuth token expired; run the profile's login command
+  HTTP 429; serving cache
+  No usage windows reported
+
+Status  ────────────────────────────────────────────────────────────────────────
+
+  ! Unknown provider
+
+gemini  ────────────────────────────────────────────────────────────────────────
+
+  ! Unknown provider
+
+Codex  ─────────────────────────────────────────────────────────────────────────
+
+  ! Status lookup failed (exit 2)
+
+Codex  ─────────────────────────────────────────────────────────────────────────
+
+Lab workspace [研究]  ready        pro   live  masked@example.test
+  Codex        5h      █████████░  88.2%  resets in 2d 11h
+  Codex        weekly  ██████░░░░    61%  resets in 2d 11h
+  gpt-model-x  1d      █░░░░░░░░░     5%  resets in 2d 11h
+  Reserve      weekly  ██░░░░░░░░    20%  resets in 2d 11h
+  Reserve: available via gpt-reserve
+  Allowance blocked: spend limit; weekly at 100%
+  Reset credits: 2 available (Full reset, expires in 4d)
+  Credits: available (balance: 12.50)
+
+spare                 ready        plus  live
+  Reserve: spent
+  No usage windows reported
+
+broken                unavailable
+  ! Account unavailable
+
+silent                unavailable
+  ! Status lookup failed
+  All accounts: 2/3 usable
+  Average usage: weekly 61%, 5h 44.125%
+  First reset: 研究 in 1h
+
+Antigravity  ───────────────────────────────────────────────────────────────────
+
+m                 auth stored    Google AI Pro  cache 2h, some un…  masked@exam…
+  Gemini          5h      █░░░░░░░░░     6%  resets in 1h 25m
+  Gemini          weekly  █░░░░░░░░░     6%  resets in 4d 7h
+  Gemini 4 Argon  5h      ███░░░░░░░  33.4%  reset 1h ago
+  Gemini 4 Argon  weekly  ██████████    95%  resets in 12m
+  Claude/GPT      weekly  ████████░░    75%  resets in 2d 11h
+  Future          Daily   ░░░░░░░░░░     0%  reset unknown
+  Odd Pool        weekly  ██████████   100%  resets in 10m
+
+研究 Café [cave]  signed in      Pro            live + cache age …  another-ver…
+  Gemini          weekly  ███████░░░    70%  resets in 1d
+  Claude/GPT      5h      █░░░░░░░░░  12.5%  resets in 13m
+
+fm2               not signed in
+  agy-acc-login fm2
+
+broken            auth stored                   quota unavailable
+  ! Quota check failed (exit 124); file credentials exist, validity unverified
+
