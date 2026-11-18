@@ -49,7 +49,21 @@ because it replaces the shell's armed jobs and both would type. Agent hooks
 call `agent-quotas hook claude|codex|agy "$TMUX_PANE"` so a limit is noticed at
 once rather than at the next poll.
 
+Keeper (cache policy for idle Paseo agents; ships disabled, turn it on with
+`"keeper": {"enabled": true}` and `agent-quotas restart`):
+
+```sh
+agent-quotas keep status                 # this Paseo agent, or every agent with a file
+agent-quotas keep set --cache warm       # ping while idle (up to warm_hours), compact big contexts
+agent-quotas keep standby                # stop warming; compact once before the cache expires
+agent-quotas keep compact --wait         # /compact now, wait for the result
+```
+
+Keepalive pings start with `[agent-quotas keepalive]`, so hooks and logs can
+drop them, and a ping that fails on the quota is never auto-continued.
+
 ## More
 
 - [docs/design.md](docs/design.md): architecture, the socket API and JSON
-  schema, polling and back-off, forced refresh, the auto-continue guarantees.
+  schema, polling and back-off, forced refresh, the auto-continue guarantees,
+  and the keeper's scheduling, marker and `/v1/agents` API.

@@ -57,6 +57,7 @@ internal/client/         socket client used by every CLI subcommand
 internal/render/         human renderers: agent-status, claude-code-usage, codex-status, agy-status
 internal/paseo/          Paseo auto-continue engine (registrations, tick, transcripts)
 internal/native/         native auto-continue engine (scopes, targets, delivery)
+internal/keeper/         cache policy for idle Paseo agents (pings, compaction, /v1/agents)
 internal/launchd/        plist template and install/uninstall
 internal/procx/          running external commands with timeouts and process-group cleanup
 ```
@@ -109,6 +110,10 @@ JSON, every key optional:
   },
   "poll": {"force_floor_s": 5, "backoff_max_s": 1800},
   "paseo": {"homes": ["~/.paseo"], "registrations_dir": "", "send_behavior": ""},
+  "keeper": {"enabled": false, "default_policy": "off", "ttl_seconds": {"claude": 3600, "codex": 1800},
+             "lead_seconds": 300, "quiet_seconds": 60, "warm_hours": 6, "ping_text": "",
+             "send_behavior": "steer", "compaction_timeout_seconds": 1200,
+             "compaction_file": "~/.compaction.yaml"},
   "native": {"registrations_dir": "", "live_list_command": ["agent_session", "live-all"]},
   "notify": {"command": []}
 }
@@ -545,9 +550,11 @@ at or after the cache expiry, for instance because the machine slept) is
 skipped, not caught up: pinging a cold cache pays the full price and keeps
 nothing.
 
-While enabled, the daemon observes the agents with a policy or a compaction in
-flight every 60 s (`paseo inspect`, the stored record, the transcript), and the
-global agent list (`paseo ls`) every 5 minutes for the default policy.
+While enabled, the daemon observes the agents with a policy every 60 s from
+Paseo's stored record, the transcript and the store (cheap file reads), runs
+`paseo inspect` only when an action is due (and again under the lock), follows
+compactions in flight every 10 s (`paseo inspect` and `paseo logs`), and reads
+the global agent list (`paseo ls`) every 5 minutes for the default policy.
 
 ### Sending and the marker
 
@@ -606,7 +613,7 @@ then fails with `error: "not idle"`.
 Read (answered with the keeper disabled too):
 
 - `GET /v1/agents[?policy=warm|compact|off|any][&all=1][&home=DIR]` →
-  `{schema_version, generated_at, agents: [Agent]}`: every agent with a file
+  `{schema_version, generated_at, keeper_enabled, agents: [Agent]}`: every agent with a file
   (`policy` filters; `any` means not `off`), plus, with `all=1`, every agent
   Paseo lists. Built from the stored records and transcripts, without
   `paseo inspect`.
@@ -643,28 +650,32 @@ Times are Unix seconds; unknown values are null.
 Act (refused with 503 `keeper_disabled` while disabled):
 
 - `POST /v1/agents/{id}/policy` `{"cache": "off|compact|warm", "warm_hours": 6,
-  "set_by": "agent|desk|cli"}` (`set_by` defaults to `desk`) → the Agent.
+  "set_by": "agent|desk|cli"}` (`set_by` defaults to `desk`; `default` is
+  reserved for the keeper) → the Agent.
   Creates a policy-only file when needed. 404 when Paseo does not know the
   agent.
 - `POST /v1/agents/{id}/standby` `{"set_by": …}` → the Agent (policy
   `compact`).
 - `POST /v1/agents/{id}/compact` → `{"compaction_id": "c-…", "state":
-  "queued|sent"}`. The desk long-polls (or polls) `GET /v1/agents/{id}` until
+  "queued|sent|failed"}` (`failed` when the immediate send failed). An agent
+  without a file gets one (policy `off`, `set_at` 0) to hold the compaction. The desk long-polls (or polls) `GET /v1/agents/{id}` until
   `cache.compaction.id` matches and `state` is terminal, then delivers. On
   `failed`/`canceled` the desk should still deliver (the message matters more
   than the compaction) and say so.
 
 CLI (same calls, daemon required; the id defaults to `PASEO_AGENT_ID`, and
-`set_by` is `agent` then, else `cli`):
+`set_by` is `agent` then, else `cli`; `keep status` with no id at all lists
+the agents with a file):
 `agent-quotas keep status [id] [--all] [--json]`,
 `keep set [id] --cache off|compact|warm [--warm-hours N]`,
 `keep standby [id]`, `keep compact [id] [--wait]`.
 
 Config (`keeper`): `enabled` (default **false** until the owner turns it on),
 `default_policy` (default `off`; applied once, with `set_by: "default"`, to
-agents whose file has no `cache` object or that have no file, when the daemon
-first sees them, and only to agents that are not archived and had real
-activity in the last 24 h), `ttl_seconds`, `lead_seconds`, `quiet_seconds`,
+agents whose policy was never set (no file, no `cache` object, or one created
+only to hold a manual compaction, `set_at` 0), when the daemon first sees them,
+and only to agents that are not archived and had real activity in the last
+24 h), `ttl_seconds`, `lead_seconds`, `quiet_seconds`,
 `warm_hours`, `ping_text`, `send_behavior`, `compaction_timeout_seconds`.
 
 ### Other senders and the lock
