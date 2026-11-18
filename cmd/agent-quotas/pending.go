@@ -5,6 +5,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
@@ -59,7 +60,10 @@ func notWired(name string) func(context.Context, []string) int {
 }
 
 var (
-	cmdAgyStatus   = notWired("agy-status")
-	cmdAgentStatus = notWired("agent-status")
-	cmdHook        = notWired("hook")
+	cmdAgyStatus = notWired("agy-status")
+	cmdHook      = notWired("hook")
 )
+
+func agyEnvelope(cfg *config.Config, snaps []model.Snapshot) (json.RawMessage, map[string]string, int) {
+	return nil, nil, 1
+}

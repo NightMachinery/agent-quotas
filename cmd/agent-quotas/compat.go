@@ -15,6 +15,7 @@ import (
 	"github.com/NightMachinery/agent-quotas/internal/codex"
 	"github.com/NightMachinery/agent-quotas/internal/config"
 	"github.com/NightMachinery/agent-quotas/internal/model"
+	"github.com/NightMachinery/agent-quotas/internal/render"
 )
 
 // colorFlag resolves an auto|always|never colour knob for stdout.
@@ -269,3 +270,123 @@ type multiFlag []string
 
 func (m *multiFlag) String() string     { return strings.Join(*m, ",") }
 func (m *multiFlag) Set(v string) error { *m = append(*m, v); return nil }
+
+// ---- agent-status ----
+
+// providerEnvelope builds one provider's section the way the old collector
+// (h-agent-status-collect) did: that provider's legacy --json output.
+func providerEnvelope(cfg *config.Config, agent string, snaps []model.Snapshot, fromCache bool, now time.Time) render.Envelope {
+	env := render.Envelope{Agent: agent}
+	var mine []model.Snapshot
+	for _, s := range snaps {
+		if s.Provider == agent {
+			mine = append(mine, s)
+		}
+	}
+	switch agent {
+	case model.Claude:
+		var rows []json.RawMessage
+		for _, s := range mine {
+			rows = append(rows, claude.LegacyRow(s, fromCache))
+		}
+		if len(rows) > 0 {
+			env.Report = claude.LegacyJSON(rows, true)
+			env.Exit = claude.LegacyExitCode(rows)
+		} else {
+			env.Exit = 1
+		}
+	case model.Codex:
+		var rows []json.RawMessage
+		for _, s := range mine {
+			if !strings.Contains(s.Name, "/") && len(s.Native) > 0 {
+				rows = append(rows, s.Native)
+			}
+		}
+		if len(rows) > 0 {
+			if data, err := codex.LegacyDocument(rows, true, now, cfg.Codex.FullPct); err == nil {
+				env.Report = data
+			} else {
+				env.Exit = 1
+			}
+		} else {
+			env.Exit = 1
+		}
+	case model.Agy:
+		env.Report, env.CacheFiles, env.Exit = agyEnvelope(cfg, mine)
+	default:
+		env.Exit = 2
+	}
+	return env
+}
+
+func cmdAgentStatus(ctx context.Context, args []string) int {
+	fs := newFlags("agent-status")
+	rf := addReadFlags(fs)
+	colorMode := fs.String("color", os.Getenv("agent_status_color"), "auto|always|never")
+	absolute := fs.String("absolute", os.Getenv("agent_status_absolute_p"), "auto|y|n")
+	columns := fs.Int("columns", 0, "terminal width (default: $agent_status_columns, $COLUMNS, 80)")
+	agents, err := parseInterspersed(fs, args)
+	if err != nil {
+		return exitUsage
+	}
+	if len(agents) == 0 {
+		agents = strings.Fields(os.Getenv("agent_status_agents"))
+	}
+	if len(agents) == 0 {
+		agents = []string{model.Claude, model.Codex}
+	}
+	cfg, err := loadConfig()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "agent-quotas: config: %v\n", err)
+		return exitFail
+	}
+	var selectors []string
+	for _, a := range agents {
+		if a == model.Claude || a == model.Codex || a == model.Agy {
+			selectors = append(selectors, a)
+		}
+	}
+	refresh := *rf.refresh || deus()
+	var snaps []model.Snapshot
+	if len(selectors) > 0 {
+		doc, code := readDocument(ctx, selectors, refresh, *rf.direct)
+		if code != exitOK {
+			return code
+		}
+		snaps = doc.Accounts
+	}
+	now := time.Now()
+	var envs []render.Envelope
+	for _, a := range agents {
+		envs = append(envs, providerEnvelope(cfg, a, snaps, !refresh && !*rf.direct, now))
+	}
+	if *rf.json {
+		data, err := render.AgentStatusJSON(envs, now)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "agent-status: %v\n", err)
+			return exitFail
+		}
+		os.Stdout.Write(data)
+		return exitOK
+	}
+	cols := *columns
+	if cols <= 0 {
+		if _, err := fmt.Sscan(os.Getenv("agent_status_columns"), &cols); err != nil || cols <= 0 {
+			cols = terminalColumns(80)
+		}
+	}
+	mode := *colorMode
+	if mode == "" {
+		mode = "auto"
+	}
+	abs := *absolute
+	if abs == "" {
+		abs = "auto"
+	}
+	opts := render.Options{Columns: cols, Color: render.AgentStatusColor(mode, stdoutIsTerminal()), Absolute: abs, Now: now}
+	if err := render.RenderAgentStatus(os.Stdout, envs, opts); err != nil {
+		fmt.Fprintf(os.Stderr, "agent-status: %v\n", err)
+		return exitFail
+	}
+	return exitOK
+}
