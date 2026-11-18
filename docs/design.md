@@ -409,33 +409,80 @@ the shell used (`CLAUDE_CODE_SESSION_ID`, `CLAUDE_CONFIG_DIR`, `CODEX_THREAD_ID`
 `CODEX_HOME`, `ANTIGRAVITY_CONVERSATION_ID`, `TMUX_PANE`). `agent-quotas hook
 claude|agy [PANE]` reads the hook payload on stdin and kicks the daemon.
 
-## Keeper: cache policy for idle Paseo agents (draft for review)
+## Keeper: cache policy for idle Paseo agents
 
-Status: **draft, not built.** Agreed split: the daemon is the one per-machine
-process that sends timed prompts to idle agents (auto-continue, keepalive pings,
-compaction before the prompt cache expires). agent-desk shows and toggles the
-policy through this API and keeps the history; it stores no policy of its own.
+The daemon is the one per-machine process that sends timed prompts to idle
+agents: auto-continue, keepalive pings, and compaction before the prompt cache
+expires. agent-desk shows and toggles the policy through this API and keeps the
+history; it stores no policy of its own. The keeper ships **disabled**
+(`keeper.enabled: false`): the read API answers, nothing is observed on a
+timer, nothing is sent, and the acting endpoints refuse with
+`keeper_disabled`.
 
 Terms:
 
 - **cache policy**, per Paseo agent: `off` (default), `compact` (compact once,
   shortly before the cache expires, if the context is big) or `warm` (keep the
-  cache alive with pings while idle, up to a ceiling, then behave as `compact`).
+  cache alive with pings while idle, up to the warm ceiling, then behave as
+  `compact`).
+- **keeper prompt**: a prompt the keeper sends: a ping (it starts with the
+  marker below) or the raw `/compact`. A **keeper turn** is a turn started by
+  a keeper prompt.
+- **real activity**: the last model response of a turn that is not a keeper
+  turn, or the last prompt of one if it has no response yet. Read from the
+  provider transcript (Claude: the timestamp of the last assistant entry that
+  is a real model call; Codex: the last `token_count` event of a root turn),
+  attributing each response to the latest prompt before it. Without a readable
+  transcript: Paseo's `lastActivityAt`, ignored when the last user message is
+  one of the keeper's own sends (within 15 s of it); then the value the keeper
+  last recorded (`cache.activity_at`). The source is exposed as
+  `last_activity_source: transcript|paseo`. Paseo `updatedAt` is never used: it
+  moves for titles, labels and attention.
+- **cache activity**: the last model call of any kind (keeper turns included),
+  a successful ping's send time, or a completed compaction, whichever is
+  latest. Keeper pings and their replies count here, not as real activity.
 - **TTL**: the provider's prompt-cache lifetime, from config
-  (`keeper.ttl_seconds`, default `{"claude": 3600, "codex": 1800}`).
-- **last activity**: when the agent's last turn ended (Paseo `updatedAt` while
-  `idle`), or the last keeper ping or compaction, whichever is later.
-- **cache expiry**: last activity + TTL.
+  (`keeper.ttl_seconds`, default `{"claude": 3600, "codex": 1800}`), with one
+  exception: a Claude seat on **overage** (an account-wide window is at 100%
+  while `extra_usage` is enabled and its spend limit is not reached) uses 300 s,
+  Claude's cache lifetime on extra usage. Exposed as `ttl_reason: config|overage`.
+  The 1 h Claude TTL for subscription seats is an assumption (Claude Code
+  requests the 1 h cache on subscriptions); change `ttl_seconds` if that stops
+  holding. Overage is informational in practice: an overage seat's verdict is
+  `blocked`, so the keeper does not send to it.
+- **cache expiry**: cache activity + TTL.
 - **lead**: how long before expiry the keeper acts (`keeper.lead_seconds`,
   default 300).
-- **big**: Paseo `lastUsage.contextWindowUsedTokens` ≥ `min_context_tokens`
-  from `~/.compaction.yaml` (default 128000 when the file is absent).
+- **big**: the context, read from the transcript (Claude: the last real model
+  call's `input_tokens + cache_creation_input_tokens + cache_read_input_tokens`;
+  Codex: the last `token_count`'s `last_token_usage.input_tokens`), is at least
+  `min_context_tokens` from `~/.compaction.yaml` (default 128000 when the file
+  or key is absent). Unknown (no transcript, or a compaction since the last
+  model call) means not big.
+- **idle stretch**: the time from one real activity to the next.
+- **warm ceiling**: `warm_until` = start of the idle stretch + `warm_hours`,
+  where the start is the later of the real activity and the time `warm` was
+  set. Every real turn re-arms it.
 - **sendable**: Paseo status `idle` (not `running`, not `error`), no pending
-  permission, not archived, the agent's seat not `blocked` in the store, no
-  unclaimed quota-failed turn (that one belongs to auto-continue), and no other
-  sender has held the agent's lock in the last `keeper.quiet_seconds` (60).
-  An agent Paseo has unloaded (`closed`) is not sendable for pings: reloading
-  it to keep a cache warm costs more than it saves.
+  permission, not archived, the agent's seat not `blocked` in the store (an
+  `unknown` seat is sendable: a ping that fails costs nothing and is not
+  continued), no unclaimed quota-failed turn (that one belongs to
+  auto-continue), and quiet: the agent's lock was not held by anyone else in
+  the last `keeper.quiet_seconds` (60) and Paseo's `lastUserMessageAt` is not
+  within that window. An agent Paseo has unloaded (`closed`) is not sendable
+  for pings (reloading it to keep a cache warm costs more than it saves); it is
+  for compaction.
+
+### Phase
+
+GET reports `cache.phase`, derived, never stored:
+
+- `off`: policy `off`.
+- `compact`: policy `compact`, set directly.
+- `standby`: policy `compact`, set by standby.
+- `warming`: policy `warm`, before `warm_until`.
+- `dormant`: policy `warm`, at or after `warm_until`: behaves as `compact`
+  until the next real turn re-arms warming. The policy is not rewritten.
 
 ### Storage
 
@@ -443,16 +490,18 @@ One file per agent per machine, the existing Paseo registration file
 (`agent-sessions/auto-continue-paseo/<hash16(home)>-<agent>.json`), gains an
 optional `cache` object. An agent with a cache policy but no auto-continue gets
 a policy-only file with `"enabled": false` (auto-continue off) and its
-`binding`. `continue off` never removes `cache`; `keep set --cache off` never
-touches auto-continue. Every write is under the same `.lock` (flock) as
+`binding`. `continue on|off` never removes `cache`; `keep set --cache off`
+never touches auto-continue. Every write is under the same `.lock` (flock) as
 auto-continue checks and sends.
 
 ```json
 "cache": {
   "policy": "warm",
   "warm_hours": 6,
-  "warm_until": 1795050000,
   "set_at": 1795028400, "set_by": "agent|desk|cli|default",
+  "standby_at": null,
+  "activity_at": 1795032000,
+  "pings": {"since": 1795032000, "count": 2},
   "last_ping": {"at": 1795032000, "ok": true, "error": ""},
   "compaction": {
     "id": "c-7f3a2b", "reason": "policy|standby|manual",
@@ -463,133 +512,175 @@ auto-continue checks and sends.
 }
 ```
 
-`compaction` is the latest one only; earlier ones are in the daemon log and the
-desk's history.
+`activity_at` is the last real activity the keeper saw (the fallback above).
+`pings.count` counts keeper pings since the real activity `pings.since`; it
+restarts at 0 when real activity moves. `compaction` is the latest one only;
+earlier ones are in the daemon log and the desk's history. `tokens_after` is
+the context of the first real model call after the compaction, null until one
+exists.
+
+Only agents with a file are keeper targets (and so the only ones whose
+`lock_path` exists).
 
 ### Scheduling
 
 Each agent with a policy other than `off` has one **next action** and a time,
-recomputed after every Paseo observation, policy change and send:
+recomputed after every observation, policy change and send. Let `due` = cache
+expiry − lead, and the **mode** at `due` be `warm` when the phase is `warming`
+and `due` is before `warm_until`, else `compact`:
 
-- `compact`: at cache expiry − lead, if big and not already compacted since
-  last activity: compact. Not big: nothing (the cache is allowed to go cold).
-- `warm`, before `warm_until`: at cache expiry − lead: if big and not yet
-  compacted in this idle stretch, compact (that also refreshes the cache);
-  otherwise ping. So a big agent is compacted once, then pinged.
-- `warm`, at or after `warm_until`: the policy becomes `compact` (recorded,
-  `set_by: "ceiling"`), and the next action is computed as above.
-- Any user or agent turn resets last activity, so the next action moves.
+- mode `compact`: at `due`, if big and not compacted in this idle stretch:
+  compact. Otherwise nothing (the cache is allowed to go cold).
+- mode `warm`: at `due`, if big and not compacted in this idle stretch:
+  compact (that also refreshes the cache); otherwise ping. So a big agent is
+  compacted once, then pinged.
+- A queued compaction is due at once.
+- A real turn starts a new idle stretch: `warm_until`, "compacted in this
+  stretch" and `pings_since_activity` all follow it.
 
 An action fires only if the agent is sendable when it is due, rechecked after
 taking the lock (inspect again, under the lock). Not sendable: retried at the
-next observation, never queued behind a running turn. A missed window (the
-machine slept past the expiry) is skipped, not caught up: pinging a cold cache
-pays the full price and keeps nothing.
+next observation, never queued behind a running turn. A missed window (now is
+at or after the cache expiry, for instance because the machine slept) is
+skipped, not caught up: pinging a cold cache pays the full price and keeps
+nothing.
 
-The daemon watches Paseo agents with a policy every 60 s (`paseo inspect`), and
-the global agent list (`paseo ls`) every 5 minutes for the default policy.
+While enabled, the daemon observes the agents with a policy or a compaction in
+flight every 60 s (`paseo inspect`, the stored record, the transcript), and the
+global agent list (`paseo ls`) every 5 minutes for the default policy.
 
-### Sending
+### Sending and the marker
 
+- Every ping starts with the marker **`[agent-quotas keepalive]`**. The marker
+  is part of the API: agent-desk's prompt hook drops prompts that start with
+  it (and the raw `/compact`) from its instruction log, and auto-continue keys
+  on it. `keeper.ping_text` is configurable, one line; text without the marker
+  gets the marker and a space prefixed. Default:
+  `[agent-quotas keepalive] Automatic cache keepalive from agent-quotas, not the user: reply with one word and make no tool calls.`
 - Ping: `paseo send <id> <ping text> --behavior steer --no-wait --json --home
   <home>`, Paseo marker variables removed. The agent is idle when it is sent,
-  so the behaviour only matters in the race noted below. Ping text
-  (`keeper.ping_text`), one line, no standby instructions:
-  `Automatic cache keepalive from agent-quotas, not the user: reply with one word and make no tool calls.`
-- Compaction: `paseo send <id> /compact ...` the same way.
+  so the behaviour only matters in the race noted below
+  (`keeper.send_behavior` overrides it; `queue` would turn the race into a
+  separate turn after the running one).
+- Compaction: `paseo send <id> /compact ...` the same way, the text unchanged.
 - Residual race: Paseo has no "send only if idle". A turn that starts between
   the recheck and the send would receive the ping as a steer. Every sender that
   takes the lock (below) closes this; only senders that do not remain.
-- **Pings and auto-continue:** a ping whose turn fails on the quota is not a
-  failed turn worth continuing. The keeper records each ping's send time; the
-  Paseo engine ignores a quota-failed turn whose user message is a keeper ping
-  (it marks it claimed without sending `Continue.`).
+- **Pings and auto-continue:** a ping turn that fails on the quota is not a
+  failed turn worth continuing. The Paseo engine recognises it from the
+  transcript (the failed turn's prompt starts with the marker) or, without a
+  transcript, from `cache.last_ping.at` within 15 s of the record's
+  `lastUserMessageAt`, and marks it claimed without sending `Continue.`
+  (status `keeper ping failed on quota; not continued`).
 
-### Standby and the ceiling
+### Standby
 
-`standby` ends warming at once: the policy becomes **`compact`** (not `off`),
-so a big agent is compacted at its next expiry and nothing is sent after that.
-`warm_until` defaults to `set_at + warm_hours` (default 6, `keeper.warm_hours`);
-setting `warm` again restarts it.
+`standby` ends warming at once and sticks: the policy becomes **`compact`**
+(`set_by` the caller: `agent`, `desk` or `cli`; `standby_at` recorded), so a
+big agent is compacted at its next expiry and nothing is sent after that.
+Setting `warm` again leaves standby and starts a new ceiling from that moment.
 
 ### Compaction state
 
 `state` moves `queued` → `sent` → `completed`, or ends `failed` / `canceled`:
 
 - `queued`: requested, waiting until the agent is sendable.
-- `sent`: `/compact` delivered.
-- `completed`: Paseo's timeline shows the compaction completed and the agent is
-  idle again; `tokens_after` is read then.
+- `sent`: recorded before `/compact` is sent (at most one send per request).
+- `completed`: Paseo's timeline (`paseo logs --json --since <sent_at>`) shows
+  a `compaction` item with status `completed` and the agent is idle again.
 - `failed`: the send failed (`error`: the CLI's error), or no completion within
-  `keeper.compaction_timeout_seconds` (1200) (`error: "timeout"`), or the agent
-  was archived.
-- `canceled`: the compaction turn ended without completing (Claude's
-  "Compaction canceled.", an interrupt, a Stop), or a new `compact` request
-  replaced a `queued` one (`error` says which).
+  `keeper.compaction_timeout_seconds` (1200) of `sent_at` (`error:
+  "timeout"`), or the agent was archived (`error: "archived"`).
+- `canceled`: the agent is idle again, the timeline since `sent_at` shows the
+  turn happened, and no completed compaction (Claude's "Compaction canceled.",
+  an interrupt, a Stop); or a newer request replaced a `queued` one (`error`
+  names the newer id).
 
-A manual compaction (`POST .../compact`) ignores `big`: the desk asked for it.
-A `queued` manual compaction waits for the agent to become sendable for up to
-the same timeout, then fails with `error: "not idle"`.
+A compaction request while one is `sent` returns that one. A manual compaction
+(`POST .../compact`) ignores `big`: the desk asked for it. A `queued`
+compaction waits for the agent to become sendable for up to the same timeout,
+then fails with `error: "not idle"`.
 
 ### API
 
-Read:
+Read (answered with the keeper disabled too):
 
-- `GET /v1/agents[?policy=warm|compact|any]` → `{schema_version, generated_at, agents: [Agent]}`
-  (every agent with a file, plus, with `?all=1`, every agent Paseo lists).
-- `GET /v1/agents/{id}` → `{schema_version, generated_at, agent: Agent}`.
+- `GET /v1/agents[?policy=warm|compact|off|any][&all=1][&home=DIR]` →
+  `{schema_version, generated_at, agents: [Agent]}`: every agent with a file
+  (`policy` filters; `any` means not `off`), plus, with `all=1`, every agent
+  Paseo lists. Built from the stored records and transcripts, without
+  `paseo inspect`.
+- `GET /v1/agents/{id}[?home=DIR]` → `{schema_version, generated_at, agent:
+  Agent}`, with a fresh `paseo inspect`. 404 when Paseo does not know the agent.
+- **Long-poll:** `GET /v1/agents/{id}?wait_compaction=<compaction id>&timeout=60`
+  answers when that compaction is terminal (`completed|failed|canceled`) or on
+  timeout (capped at 120 s), with the same document. Polling GET stays the
+  fallback.
 
 ```json
 {
   "id": "…", "home": "~/.paseo", "title": "…", "provider": "claude",
   "status": "idle", "pending_permission": false, "archived": false,
-  "last_activity_at": 1795032000,
+  "last_activity_at": 1795032000, "last_activity_source": "transcript",
+  "cache_activity_at": 1795032000,
   "context_tokens": 210000, "min_context_tokens": 128000, "big": true,
-  "ttl_seconds": 3600, "cache_expires_at": 1795035600,
-  "seat": {"account": "claude:work", "verdict": "usable"},
-  "cache": { …the stored object… },
-  "warm_until": 1795050000,
+  "ttl_seconds": 3600, "ttl_reason": "config", "cache_expires_at": 1795035600,
+  "seat": {"account": "claude:work", "verdict": "usable", "overage": false},
+  "cache": { …the stored object…, "phase": "warming" },
+  "warm_until": 1795053600,
+  "pings_since_activity": 2,
+  "sendable": {"ok": true, "reason": ""},
   "next_action": {"kind": "ping|compact|none", "at": 1795035300, "reason": "…"},
   "auto_continue": {"enabled": true, "status": "waiting for a quota-failed turn"},
   "lock_path": "…/<hash16>-<agent>.lock"
 }
 ```
 
-`cache_expires_at` is the keeper's estimate (when it has pinged, the ping
-counts as activity). The desk's cold-cache dialog can show "idle longer than
-the TTL and big" from `cache_expires_at < now && big`.
+`cache_expires_at` is the keeper's estimate. The desk's cold-cache dialog can
+show "idle longer than the TTL and big" from `cache_expires_at < now && big`.
+Times are Unix seconds; unknown values are null.
 
-Act:
+Act (refused with 503 `keeper_disabled` while disabled):
 
-- `POST /v1/agents/{id}/policy` `{"cache": "off|compact|warm", "warm_hours": 6}`
-  → the Agent. Creates a policy-only file when needed. 404 when Paseo does not
-  know the agent.
-- `POST /v1/agents/{id}/standby` → the Agent (policy `compact`).
-- `POST /v1/agents/{id}/compact` → `{"compaction_id": "c-…", "state": "queued|sent"}`.
-  The desk polls `GET /v1/agents/{id}` until `cache.compaction.id` matches and
-  `state` is terminal (`completed|failed|canceled`), then delivers. On
+- `POST /v1/agents/{id}/policy` `{"cache": "off|compact|warm", "warm_hours": 6,
+  "set_by": "agent|desk|cli"}` (`set_by` defaults to `desk`) → the Agent.
+  Creates a policy-only file when needed. 404 when Paseo does not know the
+  agent.
+- `POST /v1/agents/{id}/standby` `{"set_by": …}` → the Agent (policy
+  `compact`).
+- `POST /v1/agents/{id}/compact` → `{"compaction_id": "c-…", "state":
+  "queued|sent"}`. The desk long-polls (or polls) `GET /v1/agents/{id}` until
+  `cache.compaction.id` matches and `state` is terminal, then delivers. On
   `failed`/`canceled` the desk should still deliver (the message matters more
   than the compaction) and say so.
 
-CLI (same calls, daemon required; the id defaults to `PASEO_AGENT_ID`):
-`agent-quotas keep status [id] [--json]`, `keep set [id] --cache off|compact|warm [--warm-hours N]`,
+CLI (same calls, daemon required; the id defaults to `PASEO_AGENT_ID`, and
+`set_by` is `agent` then, else `cli`):
+`agent-quotas keep status [id] [--all] [--json]`,
+`keep set [id] --cache off|compact|warm [--warm-hours N]`,
 `keep standby [id]`, `keep compact [id] [--wait]`.
 
-Config: `keeper.enabled` (default true once built), `keeper.default_policy`
-(default `off`; applied to agents with no file when the daemon first sees them,
-recorded with `set_by: "default"`), `ttl_seconds`, `lead_seconds`,
-`quiet_seconds`, `warm_hours`, `ping_text`, `compaction_timeout_seconds`.
+Config (`keeper`): `enabled` (default **false** until the owner turns it on),
+`default_policy` (default `off`; applied once, with `set_by: "default"`, to
+agents whose file has no `cache` object or that have no file, when the daemon
+first sees them, and only to agents that are not archived and had real
+activity in the last 24 h), `ttl_seconds`, `lead_seconds`, `quiet_seconds`,
+`warm_hours`, `ping_text`, `send_behavior`, `compaction_timeout_seconds`.
 
 ### Other senders and the lock
 
 The lock path is stable and documented: the registration file's path with
 `.json` replaced by `.lock`, where `hash16(home)` is the first 16 hex digits of
-SHA-256 of the Paseo home's absolute path (as today). It is returned as
-`lock_path`, so callers need not compute it. Any process that sends to a Paseo
-agent (the desk's deliveries in particular) should take it with `flock`
+SHA-256 of the JSON string of the Paseo home's absolute path (as today). It is
+returned as `lock_path`, so callers need not compute it. Only agents with a
+file are keeper targets, so a sender takes `lock_path` only when that file
+exists; with no file there is nothing to race. Any process that sends to such
+an agent (the desk's deliveries in particular) should take it with `flock`
 (exclusive, short: only around the `paseo send`, which uses `--no-wait`). The
-keeper rechecks the agent under the lock and waits `quiet_seconds` after anyone
-else's send, so a ping or `/compact` never lands right after a user message.
+keeper takes the lock without waiting; finding it held counts as someone
+else's send. It rechecks the agent under the lock and stays quiet for
+`quiet_seconds` after anyone else's hold or send, so a ping or `/compact`
+never lands right after a user message.
 
 ## launchd
 
