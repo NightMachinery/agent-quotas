@@ -271,13 +271,14 @@ Read endpoints:
 Acting endpoints:
 
 - `POST /v1/refresh` `{"ids": ["claude:work"]}`
-- `POST /v1/continue/on` `{"kind": "paseo", "agent_id": "...", "home": "...", "poll": 300}`
-  or `{"kind": "native", "agent": "claude", "session_id": "...", "transcript": "...", "env": {...}, "frontmost": false}`
-- `POST /v1/continue/off` `{"kind": ..., ...}`
-- `POST /v1/continue/check` `{"scope": "claude-work"}` or `{"kind": "paseo", "agent_id": ...}`: run one check now
-- `POST /v1/hook` `{"agent": "claude", "pane": "%3", "payload": {...}}`: the
-  hook kick (marks the session, then checks its scope)
-- `POST /v1/config/reload`
+- `POST /v1/continue/check` `{"kind": "native", "scope": "claude-work"}` or
+  `{"kind": "paseo", "path": "<registration file>"}` (empty: all): queue a check now
+
+Registering (`continue on|off`) and the hook's marking run in the CLI process,
+because they need the caller's environment (session ids, `TMUX_PANE`); they
+write the registration files and then ask the daemon to check. A daemon that is
+down finds the registrations when it starts. There is no config-reload
+endpoint: after editing the config, `agent-quotas restart` (launchd kickstart).
 
 Errors are `{"error": "...", "code": "..."}` with a 4xx/5xx status.
 
@@ -311,7 +312,11 @@ coalescing; meant for debugging and for the first run).
 
 ## Auto-continue
 
-Two engines, both inside the daemon, both triggered the same way:
+Two engines, both inside the daemon, both triggered the same way. Each has
+a switch: `paseo.enabled` (default on; safe beside the old Python workers,
+which take the same lock and record the same claim) and `native.enabled`
+(default off, because the old armed tmux jobs would type a second
+`Continue.`; turning it on is part of the cutover).
 
 - an account transition from `blocked` (or `unknown` after `blocked`) to
   `usable`: check every registration bound to that account;
@@ -351,7 +356,9 @@ during the cutover cannot send twice for one failed turn.
 7. Quota for that agent's own binding (Claude profile + model family; Codex
    active auth of that `CODEX_HOME`) is read from the daemon store with a
    refresh if the snapshot is older than 60 s (subject to the floor and
-   back-off). Not usable or unknown: waiting for quota recovery.
+   back-off). Not usable: waiting for quota recovery. Unknown (a failed or
+   stale reading): the check is postponed and the registration left as it
+   is, exactly as the old watcher did on a reader error.
 8. Re-inspect and re-read the stored record; if anything changed (status,
    permission, binding, failure identity), skip.
 9. Record `claimed_failure` (atomic write, fsync) **before** sending.
@@ -406,12 +413,36 @@ claude|agy [PANE]` reads the hook payload on stdin and kicks the daemon.
 
 `agent-quotas install` writes `~/Library/LaunchAgents/<label>.plist`
 (label `io.github.nightmachinery.agent-quotas`; `RunAtLoad`, `KeepAlive`,
-`ProcessType` Background, stdout/stderr to the state directory, `PATH` set to
+stdout/stderr to the state directory, `PATH` set to
 include the directories of the binaries it calls) and bootstraps it with
 `launchctl bootstrap gui/<uid>`. A LaunchAgent runs in the user's GUI session,
 so the Keychain reads that failed over ssh succeed here, and ssh clients get
 the answer from the socket. `agent-quotas uninstall` boots it out and removes
 the plist. `--print` prints the plist instead.
+
+## Deviations recorded during the port
+
+Each package's ported behaviour matches the old tool (golden tests compare
+outputs byte for byte on synthetic data); the places where it deliberately
+differs:
+
+- Claude: the legacy row carries one extra key, `token_expires_at` (the human
+  report's "token expired" line needs it). No relogin, no old response cache
+  (`~/tmp/.claude-usage`): the daemon caches. HTTP 401/403 are plain errors,
+  retried at the normal interval, not backed off like 429.
+- Codex: `swap` is not ported (it rewrites `auth.json`; it stays in the old
+  tool). Single-auth `--no-all` output names the active snapshot instead of
+  `active`/`auth.json`. Tokens the app-server refreshes inside the isolated
+  temporary home are discarded, as the Python did.
+- Antigravity: the slow path runs unforced at most once per `slow_fallback_s`
+  (an hour) for an account whose cache has nothing; a cached window whose reset
+  has passed no longer blocks and marks the reading stale. The old flat bucket
+  array (`agy_status_json_p=y`) is not ported.
+- Native engine: one extra dotfile, `.blocked-state` (the blocked groups and
+  their resets, for per-family grace); an unreadable idle time or a failed
+  live listing holds back rather than acts; scopes of a second Codex home are
+  not modelled. Pickers, `agent-usage-auto-continue-at` and
+  `agent-usage-reset-wait` stay in the shell.
 
 ## Migration
 
