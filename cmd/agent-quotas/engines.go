@@ -208,7 +208,6 @@ func attachEngines(ctx context.Context, cfg *config.Config, d *daemon.Daemon, sr
 		}
 		daemon.WriteJSON(w, http.StatusOK, map[string]any{"queued": true})
 	})
-	attachNativeRoutes(srv, ns)
 
 	if len(runs) == 0 {
 		return nil, nil
