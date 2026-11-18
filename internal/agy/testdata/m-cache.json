@@ -1,0 +1,10 @@
+{"account":{"tier":"Google AI Pro","email":"masked@example.test","extra":1},"buckets":{
+ "gemini-5h":{"remaining_percent":98.5,"resets_at":2000000000,"captured_at":1999990000,"source":"statusline"},
+ "gemini-argon-wtu-weekly":{"remaining_percent":99,"resets_at":2000000000,"captured_at":1,"source":"statusline"},
+ "gemini-4-argon-weekly":{"remaining_percent":17,"resets_at":2000000000,"captured_at":1999990100,"group":"Gemini 4 Argon","label":"Gemini 4 Argon Weekly Limit","source":"slow"},
+ "gemini-argon-5h":{"remaining_percent":30,"resets_at":2000003600,"captured_at":1999990200,"source":"statusline"},
+ "3p-weekly":{"remaining_percent":0,"resets_at":2000007200,"source":"statusline"},
+ "bad":{"remaining_percent":"x","captured_at":1999990000},
+ "future-model-5h":{"remaining_percent":50,"captured_at":1999990300},
+ "notobj":5},
+ "other":"kept"}

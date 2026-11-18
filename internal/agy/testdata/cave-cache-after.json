@@ -1,0 +1,44 @@
+{
+  "buckets": {
+    "gemini-weekly": {
+      "remaining_percent": 91,
+      "resets_at": 1893456000,
+      "group": "Gemini Models",
+      "label": "Weekly Limit Remaining",
+      "captured_at": 1795021040,
+      "source": "slow"
+    },
+    "3p-weekly": {
+      "remaining_percent": 6,
+      "resets_at": 1893546245,
+      "group": "Claude and GPT models",
+      "label": "Weekly Limit Remaining",
+      "captured_at": 1795021040,
+      "source": "slow"
+    },
+    "gemini-4-argon-weekly": {
+      "remaining_percent": 17,
+      "resets_at": 1893628800,
+      "group": "Gemini 4 Argon",
+      "label": "Gemini 4 Argon Weekly Limit",
+      "captured_at": 1795021040,
+      "source": "slow"
+    },
+    "gemini-4-argon-5h": {
+      "remaining_percent": 31.5,
+      "resets_at": 1893474000,
+      "group": "Gemini 4 Argon",
+      "label": "Gemini 4 Argon 5 Hour Limit",
+      "captured_at": 1795021040,
+      "source": "slow"
+    },
+    "future-model-daily-limit": {
+      "remaining_percent": 42,
+      "resets_at": 1893456000,
+      "group": "Future Model",
+      "label": "Daily Limit",
+      "captured_at": 1795021040,
+      "source": "slow"
+    }
+  }
+}

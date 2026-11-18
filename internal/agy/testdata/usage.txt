@@ -1,0 +1,7 @@
+Antigravity quota (illustrative banner line)
+Gemini Models	Weekly Limit Remaining	91%	2030-01-01T00:00:00Z
+Claude and GPT models	Weekly Limit Remaining	6%	2030-01-02T03:04:05+02:00
+Gemini 4 Argon	Gemini 4 Argon Weekly Limit	17%	2030-01-03T00:00:00.123Z
+Gemini 4 Argon	Gemini 4 Argon 5 Hour Limit	31.5%	2030-01-01T05:00:00Z
+Future Model	Daily Limit	42%	2030-01-01T00:00:00Z
+Upsell	Upgrade	n/a	2030-01-01T00:00:00Z
