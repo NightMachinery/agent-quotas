@@ -1,0 +1,70 @@
+{
+  "files": {
+    "~/.codex/auth.json": "{\"k\":\"a\"}\n",
+    "~/.codex/auth_alpha.json": "{\"k\":\"a\"}\n",
+    "~/.codex/auth_beta.json": "{\"k\":\"b\"}\n",
+    "~/.codex/auth_gamma.json": "{\"k\":\"c\"}\n"
+  },
+  "authFiles": [
+    {
+      "rateLimits": {
+        "limitId": "codex",
+        "limitName": null,
+        "primary": {
+          "usedPercent": 100,
+          "windowDurationMins": 300,
+          "resetsAt": 1790008400
+        },
+        "secondary": {
+          "usedPercent": 60,
+          "windowDurationMins": 10080,
+          "resetsAt": 1790277200
+        },
+        "credits": {
+          "hasCredits": false,
+          "unlimited": false,
+          "balance": "0"
+        },
+        "planType": "plus"
+      },
+      "rateLimitResetCredits": {
+        "availableCount": 2,
+        "credits": [
+          {
+            "id": "rc-1",
+            "title": "Full reset",
+            "description": "x",
+            "status": "available",
+            "resetType": "full",
+            "grantedAt": 1789740800,
+            "expiresAt": 1790190800
+          },
+          {
+            "id": "rc-2",
+            "title": "Full reset",
+            "status": "available",
+            "resetType": "full",
+            "grantedAt": 1789913600,
+            "expiresAt": 1791728000
+          },
+          {
+            "id": "rc-3",
+            "title": "Old reset",
+            "status": "redeemed",
+            "resetType": "full",
+            "grantedAt": 1789222400,
+            "expiresAt": 1789913600
+          }
+        ]
+      },
+      "identity": {
+        "planType": "plus",
+        "planOwnerEmail": "masked@example.test",
+        "workspaceName": "alpha"
+      },
+      "ok": true,
+      "alias": "alpha",
+      "authFile": "~/.codex/auth_alpha.json"
+    }
+  ]
+}

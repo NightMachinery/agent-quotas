@@ -1,0 +1,20 @@
+{
+  "files": {
+    "~/.codex/auth.json": "{\"k\":\"a\"}\n",
+    "~/.codex/auth_alpha.json": "{\"k\":\"a\"}\n",
+    "~/.codex/auth_beta.json": "{\"k\":\"b\"}\n",
+    "~/.codex/auth_gamma.json": "{\"k\":\"c\"}\n"
+  },
+  "authFiles": [
+    {
+      "rateLimits": {
+        "limitId": "codex",
+        "primary": null,
+        "secondary": null
+      },
+      "ok": true,
+      "alias": "auth",
+      "authFile": "~/.codex/auth.json"
+    }
+  ]
+}

@@ -1,0 +1,7 @@
+Codex rate limits
+Plan: plus
+Plan owner: masked@example.test
+Workspace: alpha
+5h: 20% used | resets in 2h 20m (2026-09-21 16:33:20 +0000) | window 300m
+Weekly: 45% used | resets in 3d 5h (2026-09-24 19:13:20 +0000) | window 10080m
+GPT-5.3-Codex-Spark [codex_bengalfox]: 5h 12% (resets in 1h) | Weekly 80% (resets in 6d)

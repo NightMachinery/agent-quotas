@@ -1,0 +1,127 @@
+{
+  "rateLimits": {
+    "limitId": "codex",
+    "limitName": null,
+    "primary": {
+      "usedPercent": 100,
+      "windowDurationMins": 300,
+      "resetsAt": 1790008400
+    },
+    "secondary": {
+      "usedPercent": 60,
+      "windowDurationMins": 10080,
+      "resetsAt": 1790277200
+    },
+    "credits": {
+      "hasCredits": false,
+      "unlimited": false,
+      "balance": "0"
+    },
+    "planType": "plus"
+  },
+  "rateLimitResetCredits": {
+    "availableCount": 2,
+    "credits": [
+      {
+        "id": "rc-1",
+        "title": "Full reset",
+        "description": "x",
+        "status": "available",
+        "resetType": "full",
+        "grantedAt": 1789740800,
+        "expiresAt": 1790190800
+      },
+      {
+        "id": "rc-2",
+        "title": "Full reset",
+        "status": "available",
+        "resetType": "full",
+        "grantedAt": 1789913600,
+        "expiresAt": 1791728000
+      },
+      {
+        "id": "rc-3",
+        "title": "Old reset",
+        "status": "redeemed",
+        "resetType": "full",
+        "grantedAt": 1789222400,
+        "expiresAt": 1789913600
+      }
+    ]
+  },
+  "identity": {
+    "planType": "plus",
+    "planOwnerEmail": "masked@example.test",
+    "workspaceName": "alpha"
+  },
+  "quota": {
+    "source": "rateLimits",
+    "limitId": "codex",
+    "limitName": null,
+    "normalModelSlug": null,
+    "fullPct": 100.0,
+    "blocked": true,
+    "reasons": [
+      "5h window at 100%"
+    ],
+    "resetsAt": 1790008400,
+    "windows": [
+      {
+        "key": "primary",
+        "label": "5h",
+        "windowDurationMins": 300,
+        "usedPercent": 100,
+        "resetsAt": 1790008400,
+        "blocked": true
+      },
+      {
+        "key": "secondary",
+        "label": "Weekly",
+        "windowDurationMins": 10080,
+        "usedPercent": 60,
+        "resetsAt": 1790277200,
+        "blocked": false
+      }
+    ],
+    "signals": {
+      "ordinaryUsageAllowed": null,
+      "spendControlReached": null,
+      "rateLimitReachedType": null,
+      "individualLimit": null,
+      "rateLimitUpsell": null
+    },
+    "resetCredits": {
+      "availableCount": 2,
+      "credits": [
+        {
+          "id": "rc-1",
+          "title": "Full reset",
+          "resetType": "full",
+          "status": "available",
+          "grantedAt": 1789740800,
+          "expiresAt": 1790190800
+        },
+        {
+          "id": "rc-2",
+          "title": "Full reset",
+          "resetType": "full",
+          "status": "available",
+          "grantedAt": 1789913600,
+          "expiresAt": 1791728000
+        },
+        {
+          "id": "rc-3",
+          "title": "Old reset",
+          "resetType": "full",
+          "status": "redeemed",
+          "grantedAt": 1789222400,
+          "expiresAt": 1789913600
+        }
+      ]
+    },
+    "limits": []
+  },
+  "ok": true,
+  "alias": "alpha",
+  "authFile": "~/.codex/auth_alpha.json"
+}

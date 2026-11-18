@@ -1,0 +1,72 @@
+{
+  "authFiles": [
+    {
+      "rateLimits": {
+        "limitId": "codex",
+        "limitName": null,
+        "primary": {
+          "usedPercent": 64,
+          "windowDurationMins": 10080,
+          "resetsAt": 1790442807
+        },
+        "secondary": null,
+        "planType": "prolite"
+      },
+      "identity": {
+        "planType": "prolite",
+        "planOwnerEmail": "masked@example.test",
+        "workspaceName": "alpha"
+      },
+      "quota": {
+        "source": "rateLimits",
+        "limitId": "codex",
+        "limitName": null,
+        "normalModelSlug": null,
+        "fullPct": 100.0,
+        "blocked": false,
+        "reasons": [],
+        "resetsAt": null,
+        "windows": [
+          {
+            "key": "primary",
+            "label": "Weekly",
+            "windowDurationMins": 10080,
+            "usedPercent": 64,
+            "resetsAt": 1790442807,
+            "blocked": false
+          }
+        ],
+        "signals": {
+          "ordinaryUsageAllowed": null,
+          "spendControlReached": null,
+          "rateLimitReachedType": null,
+          "individualLimit": null,
+          "rateLimitUpsell": null
+        },
+        "resetCredits": {
+          "availableCount": 0,
+          "credits": []
+        },
+        "limits": []
+      },
+      "ok": true,
+      "alias": "alpha",
+      "authFile": "~/.codex/auth_alpha.json"
+    }
+  ],
+  "averageUsage": {
+    "primaryUsedPercent": 64.0,
+    "secondaryUsedPercent": null,
+    "windows": [
+      {
+        "label": "Weekly",
+        "windowDurationMins": 10080,
+        "usedPercent": 64.0,
+        "authCount": 1
+      }
+    ],
+    "maxUsedPercent": 64.0,
+    "usableCount": 1,
+    "blockedCount": 0
+  }
+}

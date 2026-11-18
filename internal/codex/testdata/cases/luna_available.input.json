@@ -1,0 +1,73 @@
+{
+  "files": {
+    "~/.codex/auth.json": "{\"k\":\"a\"}\n",
+    "~/.codex/auth_alpha.json": "{\"k\":\"a\"}\n",
+    "~/.codex/auth_beta.json": "{\"k\":\"b\"}\n",
+    "~/.codex/auth_gamma.json": "{\"k\":\"c\"}\n"
+  },
+  "authFiles": [
+    {
+      "rateLimits": {
+        "limitId": "codex",
+        "limitName": null,
+        "primary": {
+          "usedPercent": 100,
+          "windowDurationMins": 300,
+          "resetsAt": 1790008400
+        },
+        "secondary": {
+          "usedPercent": 100,
+          "windowDurationMins": 10080,
+          "resetsAt": 1790277200
+        },
+        "credits": {
+          "hasCredits": false,
+          "unlimited": false,
+          "balance": "0"
+        },
+        "planType": "plus"
+      },
+      "rateLimitsByLimitId": {
+        "codex": {
+          "limitId": "codex",
+          "limitName": null,
+          "primary": {
+            "usedPercent": 100,
+            "windowDurationMins": 300,
+            "resetsAt": 1790008400
+          },
+          "secondary": {
+            "usedPercent": 100,
+            "windowDurationMins": 10080,
+            "resetsAt": 1790277200
+          },
+          "credits": {
+            "hasCredits": false,
+            "unlimited": false,
+            "balance": "0"
+          },
+          "planType": "plus"
+        },
+        "base_model_inference": {
+          "limitId": "base_model_inference",
+          "limitName": "gpt-reserve",
+          "primary": {
+            "usedPercent": 1,
+            "windowDurationMins": 10080,
+            "resetsAt": 1790600000
+          },
+          "secondary": null,
+          "normalModelSlug": "gpt-5.6-luna"
+        }
+      },
+      "identity": {
+        "planType": "plus",
+        "planOwnerEmail": "masked@example.test",
+        "workspaceName": "alpha"
+      },
+      "ok": true,
+      "alias": "alpha",
+      "authFile": "~/.codex/auth_alpha.json"
+    }
+  ]
+}

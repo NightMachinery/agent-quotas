@@ -1,0 +1,96 @@
+{
+  "authFiles": [
+    {
+      "rateLimits": {
+        "limitId": "codex",
+        "limitName": null,
+        "primary": {
+          "usedPercent": 40,
+          "windowDurationMins": 300,
+          "resetsAt": 1790005400
+        },
+        "secondary": {
+          "usedPercent": 70,
+          "windowDurationMins": 10080,
+          "resetsAt": 1790345600
+        },
+        "rateLimitReachedType": "workspace_member_usage_limit_reached"
+      },
+      "ordinaryUsageAllowed": false,
+      "identity": {
+        "planType": "plus",
+        "planOwnerEmail": "masked@example.test",
+        "workspaceName": "alpha"
+      },
+      "quota": {
+        "source": "rateLimits",
+        "limitId": "codex",
+        "limitName": null,
+        "normalModelSlug": null,
+        "fullPct": 100.0,
+        "blocked": true,
+        "reasons": [
+          "ordinary usage not allowed",
+          "rate limit reached (workspace_member_usage_limit_reached)"
+        ],
+        "resetsAt": 1790345600,
+        "windows": [
+          {
+            "key": "primary",
+            "label": "5h",
+            "windowDurationMins": 300,
+            "usedPercent": 40,
+            "resetsAt": 1790005400,
+            "blocked": false
+          },
+          {
+            "key": "secondary",
+            "label": "Weekly",
+            "windowDurationMins": 10080,
+            "usedPercent": 70,
+            "resetsAt": 1790345600,
+            "blocked": false
+          }
+        ],
+        "signals": {
+          "ordinaryUsageAllowed": false,
+          "spendControlReached": null,
+          "rateLimitReachedType": "workspace_member_usage_limit_reached",
+          "individualLimit": null,
+          "rateLimitUpsell": null
+        },
+        "resetCredits": {
+          "availableCount": 0,
+          "credits": []
+        },
+        "limits": []
+      },
+      "ok": true,
+      "alias": "alpha",
+      "authFile": "~/.codex/auth_alpha.json"
+    }
+  ],
+  "averageUsage": {
+    "primaryUsedPercent": 40.0,
+    "secondaryUsedPercent": 70.0,
+    "windows": [
+      {
+        "label": "5h",
+        "windowDurationMins": 300,
+        "usedPercent": 40.0,
+        "authCount": 1
+      },
+      {
+        "label": "Weekly",
+        "windowDurationMins": 10080,
+        "usedPercent": 70.0,
+        "authCount": 1
+      }
+    ],
+    "maxUsedPercent": 70.0,
+    "usableCount": 0,
+    "blockedCount": 1,
+    "firstTimeToReset": 1790345600,
+    "firstTimeToResetAlias": "alpha"
+  }
+}

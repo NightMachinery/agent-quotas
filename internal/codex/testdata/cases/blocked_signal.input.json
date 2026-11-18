@@ -1,0 +1,36 @@
+{
+  "files": {
+    "~/.codex/auth.json": "{\"k\":\"a\"}\n",
+    "~/.codex/auth_alpha.json": "{\"k\":\"a\"}\n",
+    "~/.codex/auth_beta.json": "{\"k\":\"b\"}\n",
+    "~/.codex/auth_gamma.json": "{\"k\":\"c\"}\n"
+  },
+  "authFiles": [
+    {
+      "rateLimits": {
+        "limitId": "codex",
+        "limitName": null,
+        "primary": {
+          "usedPercent": 40,
+          "windowDurationMins": 300,
+          "resetsAt": 1790005400
+        },
+        "secondary": {
+          "usedPercent": 70,
+          "windowDurationMins": 10080,
+          "resetsAt": 1790345600
+        },
+        "rateLimitReachedType": "workspace_member_usage_limit_reached"
+      },
+      "ordinaryUsageAllowed": false,
+      "identity": {
+        "planType": "plus",
+        "planOwnerEmail": "masked@example.test",
+        "workspaceName": "alpha"
+      },
+      "ok": true,
+      "alias": "alpha",
+      "authFile": "~/.codex/auth_alpha.json"
+    }
+  ]
+}

@@ -1,0 +1,7 @@
+Codex rate limits
+Plan: plus
+Plan owner: masked@example.test
+Workspace: alpha
+5h: 40% used | resets in 1h 30m (2026-09-21 15:43:20 +0000) | window 300m
+Weekly: 70% used | resets in 4d (2026-09-25 14:13:20 +0000) | window 10080m
+Blocked: ordinary usage not allowed; rate limit reached (workspace_member_usage_limit_reached)

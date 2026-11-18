@@ -1,0 +1,8 @@
+[1m[36m* ~/.codex/auth_alpha.json [35m[Active][0m[0m[0m
+Plan: [35mplus[0m
+Plan owner: masked@example.test
+Workspace: [35malpha[0m
+5h: [31m100%[0m used | resets in 2h 20m (2026-09-21 16:33:20 +0000) | window 300m
+Weekly: [31m100%[0m used | resets in 3d 5h (2026-09-24 19:13:20 +0000) | window 10080m
+[35mLuna Reserve[0m [gpt-reserve]: Weekly: [32m1%[0m used | resets in 6d 22h 40m (2026-09-28 12:53:20 +0000) | window 10080m
+Blocked: [31m5h window at 100%; Weekly window at 100%[0m[32m (Luna Reserve still available)[0m

@@ -1,0 +1,25 @@
+[1m[36m* ~/.codex/auth_beta.json[0m[0m
+Plan: [35mplus[0m
+Plan owner: masked@example.test
+Workspace: [35mbeta[0m
+5h: [31m100%[0m used | resets in 2h 20m (2026-09-21 16:33:20 +0000) | window 300m
+Weekly: [33m77%[0m used | resets in 3d 5h (2026-09-24 19:13:20 +0000) | window 10080m
+Blocked: [31m5h window at 100%[0m
+
+[1m[36m* ~/.codex/auth_gamma.json[0m[0m
+Plan: [35mprolite[0m
+Plan owner: masked@example.test
+Workspace: [35mgamma[0m
+Weekly: [32m64.25%[0m used | resets in 5d (2026-09-26 14:13:20 +0000) | window 10080m
+
+[1m[36m* ~/.codex/auth_alpha.json [35m[Active][0m[0m[0m
+Plan: [35mplus[0m
+Plan owner: masked@example.test
+Workspace: [35malpha[0m
+5h: [32m52%[0m used | resets in 2h 20m (2026-09-21 16:33:20 +0000) | window 300m
+Weekly: [32m31.5%[0m used | resets in 3d 5h (2026-09-24 19:13:20 +0000) | window 10080m
+
+[1m[36mAverage usage[0m[0m
+5h: [33m76%[0m used
+Weekly: [32m57.6%[0m used
+Usable auths: 2/3

@@ -1,0 +1,156 @@
+{
+  "authFiles": [
+    {
+      "rateLimits": {
+        "limitId": "codex",
+        "limitName": null,
+        "primary": {
+          "usedPercent": 100,
+          "windowDurationMins": 300,
+          "resetsAt": 1790008400
+        },
+        "secondary": {
+          "usedPercent": 100,
+          "windowDurationMins": 10080,
+          "resetsAt": 1790277200
+        },
+        "credits": {
+          "hasCredits": false,
+          "unlimited": false,
+          "balance": "0"
+        },
+        "planType": "plus"
+      },
+      "rateLimitsByLimitId": {
+        "codex": {
+          "limitId": "codex",
+          "limitName": null,
+          "primary": {
+            "usedPercent": 100,
+            "windowDurationMins": 300,
+            "resetsAt": 1790008400
+          },
+          "secondary": {
+            "usedPercent": 100,
+            "windowDurationMins": 10080,
+            "resetsAt": 1790277200
+          },
+          "credits": {
+            "hasCredits": false,
+            "unlimited": false,
+            "balance": "0"
+          },
+          "planType": "plus"
+        },
+        "base_model_inference": {
+          "limitId": "base_model_inference",
+          "limitName": "gpt-reserve",
+          "primary": {
+            "usedPercent": 100,
+            "windowDurationMins": 10080,
+            "resetsAt": 1790600000
+          },
+          "secondary": null,
+          "normalModelSlug": "gpt-5.6-luna"
+        }
+      },
+      "identity": {
+        "planType": "plus",
+        "planOwnerEmail": "masked@example.test",
+        "workspaceName": "alpha"
+      },
+      "quota": {
+        "source": "rateLimitsByLimitId.codex",
+        "limitId": "codex",
+        "limitName": null,
+        "normalModelSlug": null,
+        "fullPct": 100.0,
+        "blocked": true,
+        "reasons": [
+          "5h window at 100%",
+          "Weekly window at 100%"
+        ],
+        "resetsAt": 1790277200,
+        "windows": [
+          {
+            "key": "primary",
+            "label": "5h",
+            "windowDurationMins": 300,
+            "usedPercent": 100,
+            "resetsAt": 1790008400,
+            "blocked": true
+          },
+          {
+            "key": "secondary",
+            "label": "Weekly",
+            "windowDurationMins": 10080,
+            "usedPercent": 100,
+            "resetsAt": 1790277200,
+            "blocked": true
+          }
+        ],
+        "lunaReserve": {
+          "limitId": "base_model_inference",
+          "limitName": "gpt-reserve",
+          "normalModelSlug": "gpt-5.6-luna",
+          "blocked": true,
+          "reasons": [
+            "Weekly window at 100%"
+          ],
+          "resetsAt": 1790600000,
+          "windows": [
+            {
+              "key": "primary",
+              "label": "Weekly",
+              "windowDurationMins": 10080,
+              "usedPercent": 100,
+              "resetsAt": 1790600000,
+              "blocked": true
+            }
+          ],
+          "label": "Luna Reserve",
+          "model": "gpt-reserve",
+          "available": false
+        },
+        "signals": {
+          "ordinaryUsageAllowed": null,
+          "spendControlReached": null,
+          "rateLimitReachedType": null,
+          "individualLimit": null,
+          "rateLimitUpsell": null
+        },
+        "resetCredits": {
+          "availableCount": 0,
+          "credits": []
+        },
+        "limits": []
+      },
+      "ok": true,
+      "alias": "alpha",
+      "authFile": "~/.codex/auth_alpha.json"
+    }
+  ],
+  "averageUsage": {
+    "primaryUsedPercent": 100.0,
+    "secondaryUsedPercent": 100.0,
+    "windows": [
+      {
+        "label": "5h",
+        "windowDurationMins": 300,
+        "usedPercent": 100.0,
+        "authCount": 1
+      },
+      {
+        "label": "Weekly",
+        "windowDurationMins": 10080,
+        "usedPercent": 100.0,
+        "authCount": 1
+      }
+    ],
+    "maxUsedPercent": 100.0,
+    "usableCount": 0,
+    "blockedCount": 1,
+    "firstTimeToReset": 1790277200,
+    "firstTimeToResetAlias": "alpha"
+  }
+}

@@ -1,0 +1,31 @@
+{
+  "files": {
+    "~/.codex/auth.json": "{\"k\":\"a\"}\n",
+    "~/.codex/auth_alpha.json": "{\"k\":\"a\"}\n",
+    "~/.codex/auth_beta.json": "{\"k\":\"b\"}\n",
+    "~/.codex/auth_gamma.json": "{\"k\":\"c\"}\n"
+  },
+  "authFiles": [
+    {
+      "rateLimits": {
+        "limitId": "codex",
+        "limitName": null,
+        "primary": {
+          "usedPercent": 64,
+          "windowDurationMins": 10080,
+          "resetsAt": 1790442807
+        },
+        "secondary": null,
+        "planType": "prolite"
+      },
+      "identity": {
+        "planType": "prolite",
+        "planOwnerEmail": "masked@example.test",
+        "workspaceName": "alpha"
+      },
+      "ok": true,
+      "alias": "alpha",
+      "authFile": "~/.codex/auth_alpha.json"
+    }
+  ]
+}

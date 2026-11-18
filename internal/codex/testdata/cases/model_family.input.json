@@ -1,0 +1,86 @@
+{
+  "files": {
+    "~/.codex/auth.json": "{\"k\":\"a\"}\n",
+    "~/.codex/auth_alpha.json": "{\"k\":\"a\"}\n",
+    "~/.codex/auth_beta.json": "{\"k\":\"b\"}\n",
+    "~/.codex/auth_gamma.json": "{\"k\":\"c\"}\n"
+  },
+  "authFiles": [
+    {
+      "rateLimits": {
+        "limitId": "codex",
+        "limitName": null,
+        "primary": {
+          "usedPercent": 20,
+          "windowDurationMins": 300,
+          "resetsAt": 1790008400
+        },
+        "secondary": {
+          "usedPercent": 45,
+          "windowDurationMins": 10080,
+          "resetsAt": 1790277200
+        },
+        "credits": {
+          "hasCredits": false,
+          "unlimited": false,
+          "balance": "0"
+        },
+        "planType": "plus"
+      },
+      "rateLimitsByLimitId": {
+        "codex": {
+          "limitId": "codex",
+          "limitName": null,
+          "primary": {
+            "usedPercent": 20,
+            "windowDurationMins": 300,
+            "resetsAt": 1790008400
+          },
+          "secondary": {
+            "usedPercent": 45,
+            "windowDurationMins": 10080,
+            "resetsAt": 1790277200
+          },
+          "credits": {
+            "hasCredits": false,
+            "unlimited": false,
+            "balance": "0"
+          },
+          "planType": "plus"
+        },
+        "codex_bengalfox": {
+          "limitId": "codex_bengalfox",
+          "limitName": "GPT-5.3-Codex-Spark",
+          "primary": {
+            "usedPercent": 12,
+            "windowDurationMins": 300,
+            "resetsAt": 1790003600
+          },
+          "secondary": {
+            "usedPercent": 80,
+            "windowDurationMins": 10080,
+            "resetsAt": 1790518400
+          }
+        },
+        "codex_idle": {
+          "limitId": "codex_idle",
+          "limitName": "Idle Family",
+          "primary": {
+            "usedPercent": 0,
+            "windowDurationMins": 300,
+            "resetsAt": 1790003600
+          },
+          "secondary": null
+        }
+      },
+      "identity": {
+        "planType": "plus",
+        "planOwnerEmail": "masked@example.test",
+        "workspaceName": "alpha"
+      },
+      "ok": true,
+      "alias": "alpha",
+      "authFile": "~/.codex/auth_alpha.json"
+    }
+  ]
+}

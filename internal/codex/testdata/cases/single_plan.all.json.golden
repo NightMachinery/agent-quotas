@@ -1,0 +1,95 @@
+{
+  "authFiles": [
+    {
+      "rateLimits": {
+        "limitId": "codex",
+        "limitName": null,
+        "primary": {
+          "usedPercent": 52,
+          "windowDurationMins": 300,
+          "resetsAt": 1790008400
+        },
+        "secondary": {
+          "usedPercent": 31.5,
+          "windowDurationMins": 10080,
+          "resetsAt": 1790277200
+        },
+        "credits": {
+          "hasCredits": false,
+          "unlimited": false,
+          "balance": "0"
+        },
+        "planType": "plus"
+      },
+      "identity": {
+        "planType": "plus",
+        "planOwnerEmail": "masked@example.test",
+        "workspaceName": "alpha"
+      },
+      "quota": {
+        "source": "rateLimits",
+        "limitId": "codex",
+        "limitName": null,
+        "normalModelSlug": null,
+        "fullPct": 100.0,
+        "blocked": false,
+        "reasons": [],
+        "resetsAt": null,
+        "windows": [
+          {
+            "key": "primary",
+            "label": "5h",
+            "windowDurationMins": 300,
+            "usedPercent": 52,
+            "resetsAt": 1790008400,
+            "blocked": false
+          },
+          {
+            "key": "secondary",
+            "label": "Weekly",
+            "windowDurationMins": 10080,
+            "usedPercent": 31.5,
+            "resetsAt": 1790277200,
+            "blocked": false
+          }
+        ],
+        "signals": {
+          "ordinaryUsageAllowed": null,
+          "spendControlReached": null,
+          "rateLimitReachedType": null,
+          "individualLimit": null,
+          "rateLimitUpsell": null
+        },
+        "resetCredits": {
+          "availableCount": 0,
+          "credits": []
+        },
+        "limits": []
+      },
+      "ok": true,
+      "alias": "alpha",
+      "authFile": "~/.codex/auth_alpha.json"
+    }
+  ],
+  "averageUsage": {
+    "primaryUsedPercent": 52.0,
+    "secondaryUsedPercent": 31.5,
+    "windows": [
+      {
+        "label": "5h",
+        "windowDurationMins": 300,
+        "usedPercent": 52.0,
+        "authCount": 1
+      },
+      {
+        "label": "Weekly",
+        "windowDurationMins": 10080,
+        "usedPercent": 31.5,
+        "authCount": 1
+      }
+    ],
+    "maxUsedPercent": 52.0,
+    "usableCount": 1,
+    "blockedCount": 0
+  }
+}

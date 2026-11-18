@@ -1,0 +1,33 @@
+{
+  "rateLimits": {
+    "limitId": "codex",
+    "primary": null,
+    "secondary": null
+  },
+  "quota": {
+    "source": "rateLimits",
+    "limitId": "codex",
+    "limitName": null,
+    "normalModelSlug": null,
+    "fullPct": 100.0,
+    "blocked": false,
+    "reasons": [],
+    "resetsAt": null,
+    "windows": [],
+    "signals": {
+      "ordinaryUsageAllowed": null,
+      "spendControlReached": null,
+      "rateLimitReachedType": null,
+      "individualLimit": null,
+      "rateLimitUpsell": null
+    },
+    "resetCredits": {
+      "availableCount": 0,
+      "credits": []
+    },
+    "limits": []
+  },
+  "ok": true,
+  "alias": "auth",
+  "authFile": "~/.codex/auth.json"
+}

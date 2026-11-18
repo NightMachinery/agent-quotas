@@ -1,0 +1,8 @@
+* ~/.codex/auth_alpha.json [Active]
+Plan: plus
+Plan owner: masked@example.test
+Workspace: alpha
+5h: 100% used | resets in 2h 20m (2026-09-21 16:33:20 +0000) | window 300m
+Weekly: 100% used | resets in 3d 5h (2026-09-24 19:13:20 +0000) | window 10080m
+Luna Reserve [gpt-reserve]: Weekly: 1% used | resets in 6d 22h 40m (2026-09-28 12:53:20 +0000) | window 10080m
+Blocked: 5h window at 100%; Weekly window at 100% (Luna Reserve still available)

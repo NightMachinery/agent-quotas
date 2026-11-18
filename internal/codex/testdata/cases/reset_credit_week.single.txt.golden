@@ -1,0 +1,7 @@
+Codex rate limits
+Plan: plus
+Plan owner: masked@example.test
+Workspace: alpha
+5h: 10% used | resets in 2h 20m (2026-09-21 16:33:20 +0000) | window 300m
+Weekly: 20% used | resets in 3d 5h (2026-09-24 19:13:20 +0000) | window 10080m
+Reset credits: 1 available (Full reset, expires in 6d 12h)
