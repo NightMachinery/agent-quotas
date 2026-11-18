@@ -1,0 +1,7 @@
+Reset -- resumed tmux:%1, kitty:3, codex:t, claude-bg:b -- not resuming frontmost (you were at the keyboard (0h:0m:5s idle, needs 0h:10m:0s))
+Reset -- resumed tmux:%1, codex:t
+Reset -- resumed codex:t -- not resuming tmux:%1 (could not read the idle time)
+Reset -- resumed tmux:%1
+Reset -- not resuming frontmost (the screen is locked)
+Reset -- resumed frontmost
+Reset -- resumed kitty:3 -- could not reach tmux:%gone
