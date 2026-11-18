@@ -149,6 +149,7 @@ func attachEngines(ctx context.Context, cfg *config.Config, d *daemon.Daemon, sr
 	if ns != nil {
 		runs = append(runs, ns.run)
 	}
+	runs = append(runs, attachKeeper(cfg, d, srv, quotas, logger))
 
 	d.Subscribe(func(t model.Transition, _ model.Snapshot) {
 		if t.To != model.Usable {

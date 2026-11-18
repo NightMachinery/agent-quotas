@@ -55,6 +55,7 @@ func init() {
 		{"agy-status", "the old agy-status report and JSON", cmdAgyStatus},
 		{"agent-status", "the combined report: agent-status [--json] [claude codex agy]", cmdAgentStatus},
 		{"continue", "auto-continue registrations: continue on|off|status|list|check|stopped", cmdContinue},
+		{"keep", "keeper cache policy: keep status|set|standby|compact [AGENT_ID]", cmdKeep},
 		{"hook", "agent hook entry point: hook claude|agy [PANE] < payload", cmdHook},
 		{"install", "install and start the launchd agent: install [--print]", cmdInstall},
 		{"uninstall", "stop and remove the launchd agent", cmdUninstall},
