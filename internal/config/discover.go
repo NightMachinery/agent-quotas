@@ -41,7 +41,12 @@ func Discover(getenv func(string) string) *Config {
 		names = []string{"m"}
 		if entries, err := os.ReadDir(filepath.Join(home, ".agy-accounts")); err == nil {
 			for _, e := range entries {
-				if e.IsDir() && e.Name() != "m" {
+				// Only directories holding an Antigravity profile are accounts;
+				// ~/.agy-accounts also holds bookkeeping such as history-owners.
+				if !e.IsDir() || e.Name() == "m" {
+					continue
+				}
+				if info, err := os.Stat(filepath.Join(home, ".agy-accounts", e.Name(), "antigravity-cli")); err == nil && info.IsDir() {
 					names = append(names, e.Name())
 				}
 			}
