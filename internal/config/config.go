@@ -104,6 +104,30 @@ type Native struct {
 	LogFile          string         `json:"log_file,omitempty"`
 }
 
+// Keeper configures the cache policy for idle Paseo agents (docs/design.md,
+// "Keeper").
+type Keeper struct {
+	// Enabled runs the keeper's observations and sends; nil means false.
+	// The read API answers either way.
+	Enabled *bool `json:"enabled,omitempty"`
+	// DefaultPolicy is applied once to recently active agents without a
+	// decided policy: off (default), compact or warm.
+	DefaultPolicy string `json:"default_policy,omitempty"`
+	// TTLSeconds is the prompt-cache lifetime per provider (claude, codex).
+	TTLSeconds               map[string]int `json:"ttl_seconds,omitempty"`
+	LeadSeconds              int            `json:"lead_seconds,omitempty"`
+	QuietSeconds             int            `json:"quiet_seconds,omitempty"`
+	WarmHours                float64        `json:"warm_hours,omitempty"`
+	PingText                 string         `json:"ping_text,omitempty"`
+	SendBehavior             string         `json:"send_behavior,omitempty"`
+	CompactionTimeoutSeconds int            `json:"compaction_timeout_seconds,omitempty"`
+	// CompactionFile holds min_context_tokens; "" means ~/.compaction.yaml.
+	CompactionFile string `json:"compaction_file,omitempty"`
+}
+
+// DefaultPingText is the keepalive ping; it starts with the keeper marker.
+const DefaultPingText = "[agent-quotas keepalive] Automatic cache keepalive from agent-quotas, not the user: reply with one word and make no tool calls."
+
 // Notify configures notifications.
 type Notify struct {
 	// Command is an argv; the title and the body are appended. Empty means
@@ -119,6 +143,7 @@ type Config struct {
 	Poll   Poll   `json:"poll"`
 	Paseo  Paseo  `json:"paseo"`
 	Native Native `json:"native"`
+	Keeper Keeper `json:"keeper"`
 	Notify Notify `json:"notify"`
 	// Env is extra environment for the commands the daemon runs (PATH, ...).
 	Env map[string]string `json:"env,omitempty"`
@@ -292,9 +317,55 @@ func (c *Config) applyDefaults() {
 	if c.Native.ActivitySlackS == 0 {
 		c.Native.ActivitySlackS = 120
 	}
+	k := &c.Keeper
+	if k.DefaultPolicy == "" {
+		k.DefaultPolicy = "off"
+	}
+	ttl := map[string]int{"claude": 3600, "codex": 1800}
+	for p, v := range k.TTLSeconds {
+		ttl[p] = v
+	}
+	k.TTLSeconds = ttl
+	if k.LeadSeconds == 0 {
+		k.LeadSeconds = 300
+	}
+	if k.QuietSeconds == 0 {
+		k.QuietSeconds = 60
+	}
+	if k.WarmHours == 0 {
+		k.WarmHours = 6
+	}
+	if k.PingText == "" {
+		k.PingText = DefaultPingText
+	}
+	if k.SendBehavior == "" {
+		k.SendBehavior = "steer"
+	}
+	if k.CompactionTimeoutSeconds == 0 {
+		k.CompactionTimeoutSeconds = 1200
+	}
+	if k.CompactionFile == "" {
+		k.CompactionFile = "~/.compaction.yaml"
+	}
 }
 
+// KeeperEnabled reports whether the keeper may observe and send.
+func (c *Config) KeeperEnabled() bool { return c.Keeper.Enabled != nil && *c.Keeper.Enabled }
+
 func (c *Config) validate() error {
+	switch c.Keeper.DefaultPolicy {
+	case "off", "compact", "warm":
+	default:
+		return fmt.Errorf("keeper.default_policy: %q is not off, compact or warm", c.Keeper.DefaultPolicy)
+	}
+	if c.Keeper.WarmHours < 0 || c.Keeper.LeadSeconds < 0 || c.Keeper.QuietSeconds < 0 {
+		return fmt.Errorf("keeper: negative durations are invalid")
+	}
+	for p, v := range c.Keeper.TTLSeconds {
+		if v <= 0 {
+			return fmt.Errorf("keeper.ttl_seconds.%s must be positive", p)
+		}
+	}
 	seen := map[string]bool{}
 	check := func(provider, name string) error {
 		if name == "" || strings.ContainsAny(name, ": \t\n") {
