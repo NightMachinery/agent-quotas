@@ -113,3 +113,45 @@ func SendBehavior(configured string, getenv func(string) string) string {
 	}
 	return "steer"
 }
+
+// Logs is `paseo logs <id> --json --since <RFC 3339> --home <home>`: the
+// timeline items since that time.
+func (c CLI) Logs(ctx context.Context, agentID, home string, since time.Time) ([]*Object, error) {
+	out, err := c.run(ctx, []string{"logs", agentID, "--json", "--since", since.UTC().Format(time.RFC3339Nano), "--home", home})
+	if err != nil {
+		return nil, err
+	}
+	o, err := DecodeObject(out)
+	if err != nil {
+		return nil, refuse("paseo logs returned unexpected JSON")
+	}
+	items, _ := o.Value("items").([]any)
+	var res []*Object
+	for _, it := range items {
+		if obj, ok := it.(*Object); ok {
+			res = append(res, obj)
+		}
+	}
+	return res, nil
+}
+
+// List is `paseo ls -g --json --home <home>`: the non-archived agents of
+// every directory.
+func (c CLI) List(ctx context.Context, home string) ([]*Object, error) {
+	out, err := c.run(ctx, []string{"ls", "-g", "--json", "--home", home})
+	if err != nil {
+		return nil, err
+	}
+	v, err := Decode(out)
+	if err != nil {
+		return nil, refuse("paseo ls returned unexpected JSON")
+	}
+	list, _ := v.([]any)
+	var res []*Object
+	for _, it := range list {
+		if obj, ok := it.(*Object); ok {
+			res = append(res, obj)
+		}
+	}
+	return res, nil
+}

@@ -51,6 +51,9 @@ const (
 	StatusSending        = "sending continuation"
 	StatusUncertain      = "send uncertain; inspect agent and re-arm explicitly"
 	StatusSent           = "continuation sent; waiting for a new quota-failed turn"
+	// StatusPingNotContinued: the failed turn was a keeper ping; it is
+	// claimed without a send.
+	StatusPingNotContinued = "keeper ping failed on quota; not continued"
 	// StatusCheckUnavailable is what the old worker printed when a tick
 	// failed; the daemon may log it.
 	StatusCheckUnavailable = "Check unavailable; no message sent"
@@ -74,6 +77,7 @@ type Engine struct {
 	transcriptFn func(record *Object, id Identity) (string, error)
 	checkableFn  func(provider any) bool
 	agyAccountFn func(provider any) (string, bool, error)
+	activityFn   func(record *Object, id Identity) (Activity, error)
 }
 
 // New returns an engine using the paseo command found by cfg.Paseo.Binary.
@@ -188,6 +192,48 @@ func (e *Engine) failureOf(snapshot, record *Object, binding *Object) (string, e
 	return "", nil
 }
 
+// pingMatchSlack is how close a keeper ping's send time and Paseo's
+// lastUserMessageAt must be for the message to be that ping.
+const pingMatchSlack = 15.0
+
+// Activity reads an agent's transcript activity (see ActivityOf).
+func (e *Engine) Activity(record *Object, id Identity) (Activity, error) {
+	if e.activityFn != nil {
+		return e.activityFn(record, id)
+	}
+	return ActivityOf(record, id)
+}
+
+// keeperTurnFailed reports whether the failed last turn was started by a
+// keeper ping: from the transcript, or, without one, from the recorded ping
+// time matching Paseo's lastUserMessageAt.
+func (e *Engine) keeperTurnFailed(state, record, binding *Object) bool {
+	if act, err := e.Activity(record, identityOf(binding)); err == nil && act.Found && act.LastTurnKeeper {
+		return true
+	}
+	cache, _ := state.Object("cache")
+	ping, _ := cache.Object("last_ping")
+	at, ok := numberOf(ping.Value("at"))
+	user := parseTime(record.Value("lastUserMessageAt"))
+	return ok && at > 0 && user > 0 && user >= float64(at)-pingMatchSlack && user <= float64(at)+pingMatchSlack
+}
+
+// Stored is the persisted Paseo record of an agent under home.
+func (e *Engine) Stored(agentID, home string) (*Object, error) { return e.stored(agentID, home) }
+
+// Binding is the binding of an agent from its `paseo inspect` output.
+func (e *Engine) Binding(snapshot *Object, home string) (*Object, error) {
+	return e.binding(snapshot, home)
+}
+
+// IdentityOf reads the identity back from a stored binding.
+func IdentityOf(binding *Object) Identity { return identityOf(binding) }
+
+// Failure is the identity of the agent's current quota-failed turn, or "".
+func (e *Engine) Failure(snapshot, record, binding *Object) (string, error) {
+	return e.failureOf(snapshot, record, binding)
+}
+
 // quotaFor ports quota(): ask the daemon about the seat this provider
 // resolves to now, for the model's family.
 func (e *Engine) quotaFor(ctx context.Context, home string, provider any, model string) (bool, error) {
@@ -265,6 +311,10 @@ func (e *Engine) Tick(ctx context.Context, path string) (string, error) {
 			setStatus(StatusWaitingFailure)
 		case failure == "" || failure == claimed:
 			setStatus(StatusWaitingNew)
+		case e.keeperTurnFailed(state, record, stored):
+			// A keepalive ping that hit the limit is not work to resume.
+			state.Set("claimed_failure", failure)
+			setStatus(StatusPingNotContinued)
 		default:
 			usable, err := e.quotaFor(ctx, home, stored.Value("provider"), model)
 			if err != nil {
@@ -421,6 +471,9 @@ func (e *Engine) On(ctx context.Context, agentID, home string, poll int) (string
 			previous, err = readObject(path)
 			if err != nil {
 				return
+			}
+			if cache, ok := previous.Get("cache"); ok {
+				state.Set("cache", cache) // the keeper's policy outlives auto-continue
 			}
 			if truthy(previous.Value("enabled")) && equal(previous.Value("binding"), binding) {
 				state.Set("claimed_failure", previous.Value("claimed_failure"))

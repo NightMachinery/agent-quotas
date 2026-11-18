@@ -115,3 +115,48 @@ func lockFile(path string) (func(), error) {
 }
 
 func lockPath(path string) string { return withSuffix(path, ".lock") }
+
+// ReadObject reads a registration file, keeping key order and numbers.
+func ReadObject(path string) (*Object, error) { return readObject(path) }
+
+// AtomicWrite replaces a registration file (0600, fsync, rename).
+func AtomicWrite(path string, value any) error { return atomicWrite(path, value) }
+
+// LockFile takes the registration lock at path, waiting for it.
+func LockFile(path string) (func(), error) { return lockFile(path) }
+
+// LockPath is the lock file of a registration file.
+func LockPath(path string) string { return lockPath(path) }
+
+// TryLockFile takes the lock at path without waiting: ok is false when
+// someone else holds it.
+func TryLockFile(path string) (unlock func(), ok bool, err error) {
+	fd, err := syscall.Open(path, syscall.O_CREAT|syscall.O_RDWR|syscall.O_NOFOLLOW|syscall.O_CLOEXEC, 0o600)
+	if err != nil {
+		return nil, false, err
+	}
+	var st syscall.Stat_t
+	if err := syscall.Fstat(fd, &st); err != nil {
+		syscall.Close(fd)
+		return nil, false, err
+	}
+	if st.Mode&syscall.S_IFMT != syscall.S_IFREG || int(st.Uid) != os.Getuid() {
+		syscall.Close(fd)
+		return nil, false, refuse("Refusing unsafe lock file")
+	}
+	for {
+		err = syscall.Flock(fd, syscall.LOCK_EX|syscall.LOCK_NB)
+		if err != syscall.EINTR {
+			break
+		}
+	}
+	if err == syscall.EWOULDBLOCK {
+		syscall.Close(fd)
+		return nil, false, nil
+	}
+	if err != nil {
+		syscall.Close(fd)
+		return nil, false, err
+	}
+	return func() { syscall.Close(fd) }, true, nil
+}
