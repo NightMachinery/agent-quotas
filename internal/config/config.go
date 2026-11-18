@@ -76,6 +76,10 @@ type Poll struct {
 
 // Paseo configures the Paseo auto-continue engine.
 type Paseo struct {
+	// Enabled runs the Paseo engine in the daemon; nil means true. It is
+	// safe beside the old Python workers: both take the registration's lock
+	// and record the claim before sending.
+	Enabled          *bool    `json:"enabled,omitempty"`
 	Homes            []string `json:"homes"`
 	RegistrationsDir string   `json:"registrations_dir,omitempty"`
 	SendBehavior     string   `json:"send_behavior,omitempty"`
@@ -84,6 +88,10 @@ type Paseo struct {
 
 // Native configures the native auto-continue engine.
 type Native struct {
+	// Enabled runs the native engine in the daemon; nil means false, since
+	// the old armed tmux jobs would type Continue. a second time. Turning it
+	// on is the cutover switch.
+	Enabled          *bool          `json:"enabled,omitempty"`
 	RegistrationsDir string         `json:"registrations_dir,omitempty"`
 	LiveListCommand  []string       `json:"live_list_command,omitempty"`
 	Text             string         `json:"text,omitempty"`
