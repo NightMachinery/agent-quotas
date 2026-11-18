@@ -1,0 +1,758 @@
+// Package paseo is the Paseo auto-continue engine, a port of the old
+// paseo_auto_continue.py: registrations of Paseo agents that stopped on a
+// usage limit, and the tick that sends one "Continue." after that agent's own
+// account has quota again. See docs/design.md, "Paseo engine".
+//
+// Registration files, their locks and the failure digests are byte
+// compatible with the Python tool, so the old workers and this engine can run
+// side by side during the cutover without sending twice.
+package paseo
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"os"
+	"path/filepath"
+	"sort"
+	"strconv"
+	"strings"
+	"time"
+	"unicode"
+
+	"github.com/NightMachinery/agent-quotas/internal/config"
+)
+
+// Quotas answers "is this seat usable now" for the engine. The daemon
+// implements it from its store, refreshing a reading that is too old before
+// answering. An error means unknown: a tick postpones, a listing warns.
+type Quotas interface {
+	// Claude reports whether the Claude profile has room for the model
+	// family ("opus", "sonnet", ...; "" for none): the account-wide windows
+	// and that family's scoped weekly window are below 100%.
+	Claude(ctx context.Context, profile, family string) (bool, error)
+	// Codex reports the regular-allowance verdict of the active auth of
+	// this CODEX_HOME (not of whichever other account has room).
+	Codex(ctx context.Context, codexHome string) (bool, error)
+	// Agy reports whether every quota pool that limits model on this
+	// Antigravity account has room (agy-best's rule).
+	Agy(ctx context.Context, account, model string) (bool, error)
+}
+
+// Status strings a tick reports, identical to the Python tool's.
+const (
+	StatusOff            = "off"
+	StatusUnavailable    = "agent unavailable"
+	StatusProviderChange = "provider changed; re-arm explicitly"
+	StatusWaitingFailure = "waiting for a quota-failed turn"
+	StatusWaitingNew     = "waiting for a new quota-failed turn"
+	StatusWaitingQuota   = "waiting for quota recovery"
+	StatusChanged        = "agent changed during quota check; skipped"
+	StatusSending        = "sending continuation"
+	StatusUncertain      = "send uncertain; inspect agent and re-arm explicitly"
+	StatusSent           = "continuation sent; waiting for a new quota-failed turn"
+	// StatusCheckUnavailable is what the old worker printed when a tick
+	// failed; the daemon may log it.
+	StatusCheckUnavailable = "Check unavailable; no message sent"
+)
+
+// Engine runs Paseo registrations. Its zero value is not usable; use New.
+type Engine struct {
+	Config *config.Config
+	Paseo  Paseo
+	Quotas Quotas
+	// UserHome is what ~ means; "" means config.Home().
+	UserHome string
+	// Getenv reads the environment (PASEO_HOME, PASEO_HOST, the send
+	// behaviour variables); nil means os.Getenv.
+	Getenv func(string) string
+	// Now is the clock for registered_at; nil means time.Now.
+	Now func() time.Time
+
+	// Test seams, the Python tool's injectable functions.
+	storedFn     func(agentID, home string) (*Object, error)
+	transcriptFn func(record *Object, id Identity) (string, error)
+	checkableFn  func(provider any) bool
+	agyAccountFn func(provider any) (string, bool, error)
+}
+
+// New returns an engine using the paseo command found by cfg.Paseo.Binary.
+func New(cfg *config.Config, quotas Quotas) *Engine {
+	return &Engine{Config: cfg, Quotas: quotas, Paseo: CLI{Binary: cfg.Paseo.Binary}}
+}
+
+func (e *Engine) userHome() string {
+	if e.UserHome != "" {
+		return e.UserHome
+	}
+	return config.Home()
+}
+
+func (e *Engine) getenv(name string) string {
+	if e.Getenv != nil {
+		return e.Getenv(name)
+	}
+	return os.Getenv(name)
+}
+
+func (e *Engine) now() time.Time {
+	if e.Now != nil {
+		return e.Now()
+	}
+	return time.Now()
+}
+
+// StateDir is the registrations directory (cfg.Paseo.RegistrationsDir).
+func (e *Engine) StateDir() string {
+	dir := ""
+	if e.Config != nil {
+		dir = e.Config.Paseo.RegistrationsDir
+	}
+	if dir == "" {
+		return filepath.Join(config.AgentSessionsDir(), "auto-continue-paseo")
+	}
+	return expandUser(dir, e.userHome())
+}
+
+// ResolveHome resolves a Paseo daemon home as the old CLI did: "" means
+// PASEO_HOME, else the first configured home (~/.paseo); then ~ expansion
+// and symlink resolution.
+func (e *Engine) ResolveHome(home string) string {
+	if home == "" {
+		home = e.getenv("PASEO_HOME")
+	}
+	if home == "" {
+		home = "~/.paseo"
+		if e.Config != nil && len(e.Config.Paseo.Homes) > 0 {
+			home = e.Config.Paseo.Homes[0]
+		}
+	}
+	return realpath(expandUser(home, e.userHome()))
+}
+
+// FileName is the registration file name of an agent under a resolved home:
+// sha256(json.dumps(home))[:16] + "-" + agent + ".json".
+func FileName(home, agentID string) string {
+	return mustDigest(home)[:16] + "-" + agentID + ".json"
+}
+
+func (e *Engine) stored(agentID, home string) (*Object, error) {
+	if e.storedFn != nil {
+		return e.storedFn(agentID, home)
+	}
+	return storedAgent(agentID, home)
+}
+
+func (e *Engine) transcript(record *Object, id Identity) (string, error) {
+	if e.transcriptFn != nil {
+		return e.transcriptFn(record, id)
+	}
+	return limitFailure(record, id)
+}
+
+// storedAgent ports stored_agent: the persisted record of one agent.
+func storedAgent(agentID, home string) (*Object, error) {
+	agents := filepath.Join(home, "agents")
+	m1, _ := filepath.Glob(filepath.Join(agents, agentID+".json"))
+	m2, _ := filepath.Glob(filepath.Join(agents, "*", agentID+".json"))
+	matches := append(m1, m2...)
+	if len(matches) != 1 {
+		return nil, refuse("Cannot find one local persisted Paseo agent")
+	}
+	record, err := readObject(matches[0])
+	if err != nil {
+		return nil, err
+	}
+	if id, _ := record.String("id"); id != agentID {
+		return nil, refuse("Stored agent ID does not match")
+	}
+	return record, nil
+}
+
+// failureOf ports failure_of: the current failed turn's identity, or "".
+func (e *Engine) failureOf(snapshot, record *Object, binding *Object) (string, error) {
+	status, _ := snapshot.String("Status")
+	// Idle runtime cleanup reports the persisted agent as closed. Its last
+	// quota failure still counts; loading the runtime is not a new turn.
+	if status == "error" || status == "closed" {
+		failure := quotaFailure(record)
+		if failure != "" || status == "error" {
+			return failure, nil
+		}
+	}
+	id := identityOf(binding)
+	if (status == "idle" || status == "closed") && (id.Agent == "claude" || id.Agent == "codex") &&
+		!truthy(record.Value("archivedAt")) {
+		return e.transcript(record, id)
+	}
+	return "", nil
+}
+
+// quotaFor ports quota(): ask the daemon about the seat this provider
+// resolves to now, for the model's family.
+func (e *Engine) quotaFor(ctx context.Context, home string, provider any, model string) (bool, error) {
+	id, err := e.providerConfig(home, provider)
+	if err != nil {
+		return false, err
+	}
+	if e.Quotas == nil {
+		return false, errors.New("no quota source")
+	}
+	if id.Agent == "codex" {
+		return e.Quotas.Codex(ctx, id.NativeHome)
+	}
+	return e.Quotas.Claude(ctx, id.Profile, ModelFamily(model))
+}
+
+// Tick runs one check of the registration at path and returns its status.
+// It records the claim before sending, so a failed turn gets at most one
+// automatic send, across restarts and alongside the old Python workers. An
+// error leaves the registration as it was, except after a send failure,
+// which disables it (the send may have happened).
+func (e *Engine) Tick(ctx context.Context, path string) (string, error) {
+	unlock, err := lockFile(lockPath(path))
+	if err != nil {
+		return "", err
+	}
+	defer unlock()
+	state, err := readObject(path)
+	if err != nil {
+		return "", err
+	}
+	enabled, ok := state.Get("enabled")
+	if !ok {
+		return "", errors.New("registration lacks enabled")
+	}
+	if !truthy(enabled) {
+		return StatusOff, nil
+	}
+	home, ok1 := state.String("home")
+	agentID, ok2 := state.String("agent_id")
+	if !ok1 || !ok2 {
+		return "", errors.New("registration lacks home or agent_id")
+	}
+	stored, _ := state.Object("binding")
+	if stored == nil {
+		stored = NewObject()
+	}
+	setStatus := func(s string) { state.Set("status", s) }
+	snapshot, err := e.Paseo.Inspect(ctx, agentID, home)
+	if err != nil {
+		return "", err
+	}
+	if !equal(snapshot.Value("Id"), agentID) || truthy(snapshot.Value("Archived")) {
+		state.Set("enabled", false)
+		setStatus(StatusUnavailable)
+	} else if b, err := e.binding(snapshot, home); err != nil {
+		return "", err
+	} else if !equal(b, state.Value("binding")) {
+		state.Set("enabled", false)
+		setStatus(StatusProviderChange)
+	} else {
+		record, err := e.stored(agentID, home)
+		if err != nil {
+			return "", err
+		}
+		failure, err := e.failureOf(snapshot, record, stored)
+		if err != nil {
+			return "", err
+		}
+		claimed, _ := state.String("claimed_failure")
+		status, _ := snapshot.String("Status")
+		model, _ := snapshot.String("Model")
+		switch {
+		case truthy(snapshot.Value("PendingPermissions")) || (failure == "" && status != "error"):
+			setStatus(StatusWaitingFailure)
+		case failure == "" || failure == claimed:
+			setStatus(StatusWaitingNew)
+		default:
+			usable, err := e.quotaFor(ctx, home, stored.Value("provider"), model)
+			if err != nil {
+				return "", err
+			}
+			if !usable {
+				setStatus(StatusWaitingQuota)
+				break
+			}
+			// Recheck after a potentially slow account query: the user may
+			// have continued, archived or changed profiles meanwhile.
+			fresh, err := e.Paseo.Inspect(ctx, agentID, home)
+			if err != nil {
+				return "", err
+			}
+			current, err := e.stored(agentID, home)
+			if err != nil {
+				return "", err
+			}
+			changed := !equal(fresh.Value("Id"), agentID) || truthy(fresh.Value("Archived")) ||
+				!equal(fresh.Value("Status"), snapshot.Value("Status")) || truthy(fresh.Value("PendingPermissions"))
+			if !changed {
+				fb, err := e.binding(fresh, home)
+				if err != nil {
+					return "", err
+				}
+				changed = !equal(fb, state.Value("binding"))
+			}
+			if !changed {
+				again, err := e.failureOf(fresh, current, stored)
+				if err != nil {
+					return "", err
+				}
+				changed = again != failure
+			}
+			if changed {
+				setStatus(StatusChanged)
+				break
+			}
+			state.Set("claimed_failure", failure)
+			setStatus(StatusSending)
+			if err := atomicWrite(path, state); err != nil {
+				return "", err
+			}
+			behavior := ""
+			if e.Config != nil {
+				behavior = e.Config.Paseo.SendBehavior
+			}
+			if err := e.Paseo.Send(ctx, agentID, home, ContinueText, SendBehavior(behavior, e.getenv)); err != nil {
+				// A timeout can mean Paseo accepted the send. Never retry
+				// that failed turn automatically; explicit re-arm clears it.
+				state.Set("enabled", false)
+				setStatus(StatusUncertain)
+				if werr := atomicWrite(path, state); werr != nil {
+					return StatusUncertain, errors.Join(err, werr)
+				}
+				return StatusUncertain, err
+			}
+			setStatus(StatusSent)
+		}
+	}
+	if err := atomicWrite(path, state); err != nil {
+		return "", err
+	}
+	status, _ := state.String("status")
+	return status, nil
+}
+
+// CheckRemote refuses a remote Paseo host (PASEO_HOST set): registrations
+// work only on the daemon's own host.
+func CheckRemote(paseoHost string) error {
+	if paseoHost != "" {
+		return refuse("remote hosts are unsupported; run on the daemon host with --home")
+	}
+	return nil
+}
+
+// validate is the old CLI's argument checks; it returns the canonical id.
+func (e *Engine) validate(agentID string, poll int) (string, error) {
+	if agentID == "" {
+		return "", refuse("pass an agent ID or run inside a Paseo agent")
+	}
+	id, ok := parseUUID(agentID)
+	if !ok {
+		return "", refuse("an exact agent UUID is required")
+	}
+	if poll < 30 {
+		return "", refuse("--poll must be at least 30 seconds")
+	}
+	if err := CheckRemote(e.getenv("PASEO_HOST")); err != nil {
+		return "", err
+	}
+	return id, nil
+}
+
+// RegistrationPath validates the agent id and returns the registration file
+// of that agent under home ("" means the default home), creating the private
+// registrations directory if needed.
+func (e *Engine) RegistrationPath(agentID, home string) (string, error) {
+	id, err := e.validate(agentID, 300)
+	if err != nil {
+		return "", err
+	}
+	return e.registrationPath(id, e.ResolveHome(home))
+}
+
+func (e *Engine) registrationPath(agentID, home string) (string, error) {
+	dir, err := privateDir(e.StateDir())
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, FileName(home, agentID)), nil
+}
+
+// On registers an agent (exact UUID; poll >= 30 s; local daemon only;
+// archived agents refused). Repeating it for an enabled registration with
+// the same binding keeps the claimed failure, so a turn already continued is
+// not continued again. The daemon schedules the ticks; no worker is started.
+func (e *Engine) On(ctx context.Context, agentID, home string, poll int) (string, error) {
+	agentID, err := e.validate(agentID, poll)
+	if err != nil {
+		return "", err
+	}
+	home = e.ResolveHome(home)
+	path, err := e.registrationPath(agentID, home)
+	if err != nil {
+		return "", err
+	}
+	snapshot, err := e.Paseo.Inspect(ctx, agentID, home)
+	if err != nil {
+		return "", err
+	}
+	if !equal(snapshot.Value("Id"), agentID) || truthy(snapshot.Value("Archived")) {
+		return "", refuse("Agent is unavailable or archived")
+	}
+	binding, err := e.binding(snapshot, home)
+	if err != nil {
+		return "", err
+	}
+	state := Obj("version", 1, "enabled", true, "home", home, "agent_id", agentID,
+		"binding", binding, "poll", poll, "status", StatusWaitingFailure,
+		"registered_at", float64(e.now().UnixNano())/1e9)
+	if _, err := e.stored(agentID, home); err != nil { // a readable local record first
+		return "", err
+	}
+	unlock, err := lockFile(lockPath(path))
+	if err != nil {
+		return "", err
+	}
+	func() {
+		defer unlock()
+		if _, statErr := os.Stat(path); statErr == nil {
+			var previous *Object
+			previous, err = readObject(path)
+			if err != nil {
+				return
+			}
+			if truthy(previous.Value("enabled")) && equal(previous.Value("binding"), binding) {
+				state.Set("claimed_failure", previous.Value("claimed_failure"))
+				status, has := previous.Get("status")
+				if !has {
+					status = StatusWaitingFailure
+				}
+				state.Set("status", status)
+			}
+		}
+		err = atomicWrite(path, state)
+	}()
+	if err != nil {
+		return "", err
+	}
+	return "auto-continue on: " + pyStr(binding.Value("agent")) + "/" + pyStr(binding.Value("profile")) +
+		", target: paseo:" + agentID + ", poll: " + strconv.Itoa(poll) + "s", nil
+}
+
+// Off disables a registration under the tick lock, so no send is in flight
+// when it returns.
+func (e *Engine) Off(ctx context.Context, agentID, home string) (string, error) {
+	agentID, err := e.validate(agentID, 300)
+	if err != nil {
+		return "", err
+	}
+	path, err := e.registrationPath(agentID, e.ResolveHome(home))
+	if err != nil {
+		return "", err
+	}
+	if _, err := os.Stat(path); err != nil {
+		return "auto-continue was not on for this Paseo agent", nil
+	}
+	unlock, err := lockFile(lockPath(path))
+	if err != nil {
+		return "", err
+	}
+	defer unlock()
+	state, err := readObject(path)
+	if err != nil {
+		return "", err
+	}
+	state.Set("enabled", false)
+	state.Set("status", StatusOff)
+	if err := atomicWrite(path, state); err != nil {
+		return "", err
+	}
+	return "auto-continue off for paseo:" + agentID, nil
+}
+
+// Status describes one registration in the old tool's words; the watcher
+// line names the daemon instead of a tmux worker.
+func (e *Engine) Status(ctx context.Context, agentID, home string) (string, error) {
+	agentID, err := e.validate(agentID, 300)
+	if err != nil {
+		return "", err
+	}
+	path, err := e.registrationPath(agentID, e.ResolveHome(home))
+	if err != nil {
+		return "", err
+	}
+	if _, err := os.Stat(path); err != nil {
+		return "this Paseo agent: off", nil
+	}
+	state, err := readObject(path)
+	if err != nil {
+		return "", err
+	}
+	binding, _ := state.Object("binding")
+	onOff := "off"
+	if truthy(state.Value("enabled")) {
+		onOff = "on"
+	}
+	lines := []string{
+		"this Paseo agent: " + onOff + ", " + pyStr(state.Value("status")),
+		"profile: " + pyStr(binding.Value("agent")) + "/" + pyStr(binding.Value("profile")),
+		"target: paseo:" + agentID + ", poll: " + pyStr(state.Value("poll")) + "s",
+		"watcher: agent-quotas daemon",
+	}
+	return strings.Join(lines, "\n"), nil
+}
+
+// Registration is one registration file, for the daemon's scheduler.
+type Registration struct {
+	Path       string `json:"path"`
+	AgentID    string `json:"agent_id"`
+	Home       string `json:"home"`
+	Enabled    bool   `json:"enabled"`
+	Poll       int    `json:"poll"` // seconds; 300 when unreadable
+	Status     string `json:"status"`
+	Agent      string `json:"agent"`   // binding: claude or codex
+	Profile    string `json:"profile"` // binding: Claude profile, or "codex"
+	NativeHome string `json:"native_home"`
+	Provider   string `json:"provider"`
+}
+
+// Registrations lists every readable registration file, enabled or not,
+// sorted by path. Unreadable files are skipped.
+func (e *Engine) Registrations() ([]Registration, error) {
+	paths, err := filepath.Glob(filepath.Join(e.StateDir(), "*.json"))
+	if err != nil {
+		return nil, err
+	}
+	sort.Strings(paths)
+	var out []Registration
+	for _, path := range paths {
+		state, err := readObject(path)
+		if err != nil {
+			continue
+		}
+		binding, _ := state.Object("binding")
+		r := Registration{Path: path, Enabled: truthy(state.Value("enabled")), Poll: 300}
+		r.AgentID, _ = state.String("agent_id")
+		r.Home, _ = state.String("home")
+		r.Status, _ = state.String("status")
+		r.Agent, _ = binding.String("agent")
+		r.Profile, _ = binding.String("profile")
+		r.NativeHome, _ = binding.String("native_home")
+		r.Provider, _ = binding.String("provider")
+		if n, ok := state.Value("poll").(json.Number); ok {
+			if f, err := n.Float64(); err == nil && f >= 1 {
+				r.Poll = int(f)
+			}
+		}
+		out = append(out, r)
+	}
+	return out, nil
+}
+
+// pySplitJoin is " ".join(s.split()) with Python's whitespace set.
+func pySplitJoin(s string) string {
+	return strings.Join(strings.FieldsFunc(s, func(r rune) bool {
+		return unicode.IsSpace(r) || (r >= 0x1c && r <= 0x1f)
+	}), " ")
+}
+
+// List is the old `list` action: one tab-separated row per enabled
+// registration (agent id, home, agent/profile, status).
+func (e *Engine) List() ([]string, error) {
+	dir := e.StateDir()
+	if info, err := os.Stat(dir); err != nil || !info.IsDir() {
+		return nil, nil
+	}
+	paths, err := filepath.Glob(filepath.Join(dir, "*.json"))
+	if err != nil {
+		return nil, err
+	}
+	sort.Strings(paths)
+	var rows []string
+	for _, path := range paths {
+		state, err := readObject(path)
+		if err != nil || !truthy(state.Value("enabled")) {
+			continue
+		}
+		binding, _ := state.Object("binding")
+		field := func(o *Object, key, def string) string {
+			v, ok := o.Get(key)
+			if !ok {
+				return def
+			}
+			return pyStr(v)
+		}
+		row := []string{field(state, "agent_id", ""), field(state, "home", ""),
+			field(binding, "agent", "?") + "/" + field(binding, "profile", "?"), field(state, "status", "")}
+		if !truthy(state.Value("agent_id")) || !truthy(state.Value("home")) {
+			continue
+		}
+		for i := range row {
+			row[i] = pySplitJoin(row[i])
+		}
+		rows = append(rows, strings.Join(row, "\t"))
+	}
+	return rows, nil
+}
+
+// stoppedAgents ports stopped_agents: the local agents whose last turn
+// stopped at a usage limit, registered or not, from the stored records alone.
+func (e *Engine) stoppedAgents(home string) ([]string, error) {
+	agents := filepath.Join(home, "agents")
+	m1, _ := filepath.Glob(filepath.Join(agents, "*.json"))
+	m2, _ := filepath.Glob(filepath.Join(agents, "*", "*.json"))
+	paths := append(m1, m2...)
+	sort.Strings(paths)
+	type cached struct {
+		id Identity
+		ok bool
+	}
+	identities := map[string]cached{}
+	var out []string
+	for _, path := range paths {
+		record, err := readObject(path)
+		if err != nil {
+			continue // unreadable, not JSON, or not an object
+		}
+		if truthy(record.Value("archivedAt")) || truthy(record.Value("internal")) {
+			continue
+		}
+		agentID, ok := record.String("id")
+		if !ok {
+			continue
+		}
+		status, _ := record.String("lastStatus")
+		if (status == "error" || status == "closed") && quotaErrorOf(record) {
+			out = append(out, agentID)
+			continue
+		}
+		if status != "idle" && status != "closed" {
+			continue
+		}
+		provider := record.Value("provider")
+		key := pyStr(provider)
+		if _, isStr := provider.(string); !isStr {
+			key = "\x00" + key
+		}
+		c, seen := identities[key]
+		if !seen {
+			id, err := e.providerConfig(home, provider)
+			c = cached{id: id, ok: err == nil}
+			identities[key] = c
+		}
+		if !c.ok || (c.id.Agent != "claude" && c.id.Agent != "codex") {
+			continue
+		}
+		failure, err := e.transcript(record, c.id)
+		if err != nil {
+			return nil, err
+		}
+		if failure != "" {
+			out = append(out, agentID)
+		}
+	}
+	return out, nil
+}
+
+func (e *Engine) checkable(home string, provider any) bool {
+	if e.checkableFn != nil {
+		return e.checkableFn(provider)
+	}
+	_, err := e.providerConfig(home, provider)
+	return err == nil
+}
+
+func (e *Engine) agyAccountOf(home string, provider any) (string, bool, error) {
+	if e.agyAccountFn != nil {
+		return e.agyAccountFn(provider)
+	}
+	return agyAccount(home, provider)
+}
+
+// usableAgents ports usable_agents: the agents whose seat has quota left for
+// their model now. One check per (provider, model family) and per
+// (Antigravity account, model). Unknown Antigravity quota and providers whose
+// quota is not read here keep their agents, with a note; a failed Claude or
+// Codex check leaves its agents out, with a note.
+func (e *Engine) usableAgents(ctx context.Context, home string, agentIDs []string, warn func(string)) ([]string, error) {
+	type key struct{ kind, a, b string }
+	verdicts := map[key]bool{}
+	var out []string
+	for _, agentID := range agentIDs {
+		record, err := e.stored(agentID, home)
+		if err != nil {
+			warn(agentID + ": no readable record; left out")
+			continue
+		}
+		provider := record.Value("provider")
+		model := ""
+		if cfg, ok := record.Value("config").(*Object); ok && truthy(cfg.Value("model")) {
+			model = pyStr(cfg.Value("model"))
+		} else if rt, ok := record.Value("runtimeInfo").(*Object); ok && truthy(rt.Value("model")) {
+			model = pyStr(rt.Value("model"))
+		}
+		checkable := e.checkable(home, provider)
+		if !checkable {
+			account, isAgy, err := e.agyAccountOf(home, provider)
+			if err != nil {
+				return out, err
+			}
+			if isAgy {
+				k := key{"agy", account, model}
+				if _, done := verdicts[k]; !done {
+					usable, err := e.agyQuota(ctx, account, model)
+					if err != nil {
+						warn("Antigravity " + account + " " + model + ": quota unknown (" + err.Error() + "); its agents are kept")
+						usable = true
+					}
+					verdicts[k] = usable
+				}
+				if verdicts[k] {
+					out = append(out, agentID)
+				}
+				continue
+			}
+			warn(agentID + ": " + pyStr(provider) + " quota is not checked here; kept")
+			out = append(out, agentID)
+			continue
+		}
+		k := key{"seat", pyStr(provider), ModelFamily(model)}
+		if _, done := verdicts[k]; !done {
+			usable, err := e.quotaFor(ctx, home, provider, model)
+			if err != nil {
+				warn(pyStr(provider) + ": quota check failed (" + err.Error() + "); its agents are left out")
+				usable = false
+			}
+			verdicts[k] = usable
+		}
+		if verdicts[k] {
+			out = append(out, agentID)
+		}
+	}
+	return out, nil
+}
+
+func (e *Engine) agyQuota(ctx context.Context, account, model string) (bool, error) {
+	if e.Quotas == nil {
+		return false, errors.New("no quota source")
+	}
+	return e.Quotas.Agy(ctx, account, model)
+}
+
+// Stopped is the old `stopped` action: the local agents of home ("" means
+// the default home) whose last turn stopped at a usage limit, subagents
+// included, registered or not. With usable, only those whose seat has quota
+// left for their model now; warn receives the notes the old tool printed on
+// stderr (nil discards them).
+func (e *Engine) Stopped(ctx context.Context, home string, usable bool, warn func(string)) ([]string, error) {
+	home = e.ResolveHome(home)
+	found, err := e.stoppedAgents(home)
+	if err != nil || !usable {
+		return found, err
+	}
+	if warn == nil {
+		warn = func(string) {}
+	}
+	return e.usableAgents(ctx, home, found, warn)
+}

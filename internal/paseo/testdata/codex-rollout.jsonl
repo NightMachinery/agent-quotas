@@ -1,0 +1,4 @@
+{"type": "event_msg", "payload": {"type": "task_started", "turn_id": "t1", "root_turn_id": "t1"}}
+{"type": "response_item", "payload": {"type": "message"}}
+{"type": "event_msg", "payload": {"type": "task_complete", "turn_id": "t1", "root_turn_id": "t1", "error": {"message": "You\u2019ve hit your usage limit. Try again later."}}}
+{"type": "event_msg", "payload": {"type": "task_complete", "turn_id": "r1", "root_turn_id": "t0"}}

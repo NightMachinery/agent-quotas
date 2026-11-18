@@ -1,0 +1,110 @@
+[
+ {
+  "provider": "claude",
+  "identity": {
+   "agent": "claude",
+   "profile": "default",
+   "native_home": "~/.claude",
+   "config_hash": "ea723e4eb1c4c5b06b0a989560f05b06416b7f27267f542879f1ce74ed7de966"
+  }
+ },
+ {
+  "provider": "codex",
+  "identity": {
+   "agent": "codex",
+   "profile": "codex",
+   "native_home": "~/.codex",
+   "config_hash": "77aa58509982e22638c0c9096882fb8d0e07c8b93937031a99251f64a48ab71d"
+  }
+ },
+ {
+  "provider": "claude-work",
+  "identity": {
+   "agent": "claude",
+   "profile": "work",
+   "native_home": "~/.claude-work",
+   "config_hash": "46e4d14979f19d8d4bf11086c96704f8d83053e38fc9b922004e5e8e7cbd95cc"
+  }
+ },
+ {
+  "provider": "claude-work-alias",
+  "identity": {
+   "agent": "claude",
+   "profile": "work",
+   "native_home": "~/.claude-work",
+   "config_hash": "937a3a89a95f0cc568ca0fbdad97e9a62761c8d603c37a2e31973df790bb7126"
+  }
+ },
+ {
+  "provider": "claude-explicit-default",
+  "identity": {
+   "agent": "claude",
+   "profile": "default",
+   "native_home": "~/.claude",
+   "config_hash": "8f3dacc147e79598196fb5ec8a9160bfa6aa3e8879abe176c95af5ac56723d31"
+  }
+ },
+ {
+  "provider": "codex-work",
+  "identity": {
+   "agent": "codex",
+   "profile": "codex",
+   "native_home": "/private/tmp/example-codex-work",
+   "config_hash": "ac24c0fa214f63ef5ce7a620d93435b8e4549bca6044d14c357e2ac7ffc73a43"
+  }
+ },
+ {
+  "provider": "codex-nested",
+  "identity": {
+   "agent": "codex",
+   "profile": "codex",
+   "native_home": "/private/tmp/example-codex-nested",
+   "config_hash": "e3d246e2a64b0c5a7635c38cfb3220db916e4d696a638fa55bb22cfbcbb9ce44"
+  }
+ },
+ {
+  "provider": "codex-unicode",
+  "identity": {
+   "agent": "codex",
+   "profile": "codex",
+   "native_home": "~/.codex",
+   "config_hash": "3292d167b60416abc10d4c030fc4812005f4dd645d21071225d4f922e929652f"
+  }
+ },
+ {
+  "provider": "cycle-a",
+  "error": "Provider must resolve to Claude or Codex"
+ },
+ {
+  "provider": "agy-acp",
+  "error": "Provider must resolve to Claude or Codex"
+ },
+ {
+  "provider": "nowhere",
+  "error": "Provider must resolve to Claude or Codex"
+ },
+ {
+  "provider": "agy-acp",
+  "agy_account": "cave"
+ },
+ {
+  "provider": "agy-main",
+  "agy_account": "m"
+ },
+ {
+  "provider": "antigravity",
+  "agy_account": "m"
+ },
+ {
+  "provider": "other-acp",
+  "agy_account": null
+ },
+ {
+  "provider": "copilot",
+  "agy_account": null
+ },
+ {
+  "provider": "agy-child",
+  "agy_account": null
+ }
+]
