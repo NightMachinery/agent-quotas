@@ -8,6 +8,7 @@ import (
 	"os"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/NightMachinery/agent-quotas/internal/daemon"
@@ -37,63 +38,85 @@ func canonical(id string) (string, error) {
 }
 
 // Agents lists every agent with a registration file (policy filters:
-// off, compact, warm, any = not off), plus, with all, every agent Paseo
-// lists. No paseo inspect.
+// off, compact, warm, any = not off), plus, with all, every agent the last
+// `paseo ls` of the home listed. It answers from memory: no external
+// command, no transcript read.
 func (k *Keeper) Agents(ctx context.Context, home, policy string, all bool) ([]View, error) {
 	switch policy {
 	case "", "any", PolicyOff, PolicyCompact, PolicyWarm:
 	default:
 		return nil, fmt.Errorf("%w: policy must be off, compact, warm or any", ErrBadRequest)
 	}
-	regs, err := k.Engine.Registrations()
-	if err != nil {
-		return nil, err
-	}
-	out := []View{}
-	seen := map[string]bool{}
+	k.prime(ctx)
 	resolved := k.Engine.ResolveHome(home)
-	for _, r := range regs {
-		if home != "" && r.Home != resolved {
+	m := k.mem()
+	m.mu.RLock()
+	var entries []*entry
+	var pending []string // registered, not observed yet
+	seen := map[string]bool{}
+	for agentKey := range m.regs {
+		h, id, _ := strings.Cut(agentKey, "\x00")
+		if home != "" && h != resolved || m.unknown[agentKey] {
 			continue
 		}
-		o, err := k.observe(ctx, r.AgentID, r.Home, false)
-		if err != nil {
-			continue
+		seen[id] = true
+		if e, ok := m.agents[agentKey]; ok {
+			entries = append(entries, e)
+		} else {
+			pending = append(pending, agentKey)
 		}
-		seen[r.AgentID] = true
-		v := k.view(o)
-		if !policyMatches(v, policy) {
-			continue
-		}
-		out = append(out, v)
 	}
-	if all {
-		list, err := k.Paseo.List(ctx, resolved)
-		if err != nil {
-			return nil, err
-		}
-		for _, item := range list {
+	type unlisted struct {
+		id   string
+		item *paseo.Object
+		e    *entry
+	}
+	var extra []unlisted
+	if l := m.lists[resolved]; all && l != nil {
+		for _, item := range l.items {
 			raw, _ := item.String("id")
 			id, ok := paseo.CanonicalID(raw)
 			if !ok || seen[id] {
 				continue
 			}
-			o, err := k.observe(ctx, id, resolved, false)
-			if err != nil {
-				continue
-			}
-			v := k.view(o)
+			seen[id] = true
+			extra = append(extra, unlisted{id, item, m.agents[key(resolved, id)]})
+		}
+	}
+	m.mu.RUnlock()
+
+	// Views are derived outside the lock (view takes other locks).
+	out := []View{}
+	for _, e := range entries {
+		if v := k.viewOf(e); policyMatches(v, policy) {
+			out = append(out, v)
+		}
+	}
+	// Without an observation the policy is not known: such an agent is
+	// listed (observed_at null) only when no policy filter is asked.
+	for _, agentKey := range pending {
+		if policy == "" {
+			h, id, _ := strings.Cut(agentKey, "\x00")
+			out = append(out, k.view(&obs{agentID: id, home: h}))
+		}
+	}
+	for _, u := range extra {
+		var v View
+		if u.e == nil {
+			v = k.itemView(u.id, resolved, u.item)
+		} else {
+			v = k.viewOf(u.e)
 			if v.Status == "" {
-				v.Status, _ = item.String("status")
+				v.Status, _ = u.item.String("status")
 			}
 			if v.Title == nil {
-				if t, ok := item.String("name"); ok && t != "" {
+				if t, ok := u.item.String("name"); ok && t != "" {
 					v.Title = &t
 				}
 			}
-			if policyMatches(v, policy) {
-				out = append(out, v)
-			}
+		}
+		if policyMatches(v, policy) {
+			out = append(out, v)
 		}
 	}
 	sort.SliceStable(out, func(i, j int) bool { return out[i].ID < out[j].ID })
@@ -114,24 +137,56 @@ func policyMatches(v View, policy string) bool {
 	return p == policy
 }
 
-// Agent is one agent's document, with a fresh paseo inspect when Paseo
-// answers.
+// Agent is one agent's document, from memory. An agent never observed
+// (new since the last listing, or unknown) is observed once from its files
+// (no external command) and remembered.
 func (k *Keeper) Agent(ctx context.Context, id, home string) (View, error) {
 	id, err := canonical(id)
 	if err != nil {
 		return View{}, err
 	}
-	o, err := k.observe(ctx, id, home, true)
-	if err != nil && !errors.Is(err, ErrUnknownAgent) {
-		o, err = k.observe(ctx, id, home, false)
-	}
+	e, err := k.entryFor(ctx, id, home)
 	if err != nil {
 		return View{}, err
 	}
-	if o.record == nil && o.inspect == nil {
-		return View{}, ErrUnknownAgent
+	return k.viewOf(e), nil
+}
+
+// entryFor is the agent's last observation, observing it from its files
+// when there is none.
+func (k *Keeper) entryFor(ctx context.Context, id, home string) (*entry, error) {
+	resolved := k.Engine.ResolveHome(home)
+	e, ok := k.cached(resolved, id)
+	if !ok {
+		type result struct {
+			o   *obs
+			err error
+		}
+		ch := make(chan result, 1)
+		go func() {
+			o, err := k.observeStore(context.WithoutCancel(ctx), id, resolved)
+			ch <- result{o, err}
+		}()
+		timer := time.NewTimer(missWait)
+		defer timer.Stop()
+		select {
+		case r := <-ch:
+			if r.err != nil {
+				return nil, r.err
+			}
+			if e, ok = k.cached(r.o.home, id); !ok {
+				return nil, ErrUnknownAgent
+			}
+		case <-timer.C:
+			return nil, ErrNotObserved
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
 	}
-	return k.view(o), nil
+	if e.o.record == nil && e.o.inspect == nil {
+		return nil, ErrUnknownAgent
+	}
+	return e, nil
 }
 
 // knownAgent inspects an agent for an acting request: unknown agents give
@@ -272,10 +327,20 @@ func (k *Keeper) setPolicy(ctx context.Context, id, home, policy string, warmHou
 			what = "standby (policy compact)"
 		}
 		k.Log.Printf("keeper %s: %s, set by %s", id, what, setBy)
+		k.noteRegistration(home, id, path)
+	}
+	// The answer reuses the inspect already made; no second one.
+	o, err := k.observeWith(ctx, id, home, true, snap)
+	if err != nil {
+		return View{}, err
+	}
+	k.store(o)
+	if state != nil {
 		k.signal()
 		k.request(path)
 	}
-	return k.Agent(ctx, id, home)
+	e, _ := k.cached(o.home, id)
+	return k.viewOf(e), nil
 }
 
 // Compact queues a manual compaction (or returns the one in flight) and
@@ -329,6 +394,8 @@ func (k *Keeper) Compact(ctx context.Context, id, home string) (CompactResult, e
 	if replaced != "" {
 		k.Log.Printf("keeper %s: compaction %s canceled (replaced by %s)", id, replaced, res.CompactionID)
 	}
+	k.noteRegistration(home, id, path)
+	k.refreshPath(path)
 	if res.State == StateQueued {
 		k.Log.Printf("keeper %s: compaction %s queued (manual)", id, res.CompactionID)
 		k.signal()
@@ -359,11 +426,11 @@ func (k *Keeper) WaitCompaction(ctx context.Context, id, home, cid string, timeo
 	defer deadline.Stop()
 	for {
 		changed := k.changes()
-		o, err := k.observe(ctx, id, home, false)
+		e, err := k.entryFor(ctx, id, home)
 		if err != nil {
 			return View{}, err
 		}
-		v := k.view(o)
+		v := k.viewOf(e)
 		var comp *Compaction
 		if v.Cache != nil {
 			comp = v.Cache.Compaction
@@ -405,7 +472,10 @@ type ListDocument struct {
 	SchemaVersion int     `json:"schema_version"`
 	GeneratedAt   float64 `json:"generated_at"`
 	Enabled       bool    `json:"keeper_enabled"`
-	Agents        []View  `json:"agents"`
+	// ListedAt is when the `paseo ls` behind all=1 ran (absent before the
+	// first, or without all).
+	ListedAt *float64 `json:"listed_at,omitempty"`
+	Agents   []View   `json:"agents"`
 }
 
 // PolicyRequest is the body of POST /v1/agents/{id}/policy and .../standby.
@@ -423,6 +493,8 @@ func writeErr(w http.ResponseWriter, err error) {
 		status, code = http.StatusServiceUnavailable, "keeper_disabled"
 	case errors.Is(err, ErrUnknownAgent):
 		status, code = http.StatusNotFound, "unknown_agent"
+	case errors.Is(err, ErrNotObserved):
+		status, code = http.StatusServiceUnavailable, "not_observed"
 	case errors.Is(err, ErrBadRequest), errors.Is(err, daemon.ErrBadRequest):
 		status, code = http.StatusBadRequest, "bad_request"
 	case errors.As(err, &pe):
@@ -449,8 +521,12 @@ func (k *Keeper) Register(m Mux) {
 			writeErr(w, err)
 			return
 		}
-		daemon.WriteJSON(w, http.StatusOK, ListDocument{SchemaVersion: model.SchemaVersion,
-			GeneratedAt: k.nowS(), Enabled: k.Enabled(), Agents: agents})
+		doc := ListDocument{SchemaVersion: model.SchemaVersion,
+			GeneratedAt: k.nowS(), Enabled: k.Enabled(), Agents: agents}
+		if all {
+			doc.ListedAt = k.ListedAt(q.Get("home"))
+		}
+		daemon.WriteJSON(w, http.StatusOK, doc)
 	})
 	m.Handle("GET /v1/agents/{id}", func(w http.ResponseWriter, r *http.Request) {
 		q := r.URL.Query()

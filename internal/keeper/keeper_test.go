@@ -532,7 +532,7 @@ func TestDefaultPolicyFilter(t *testing.T) {
 	for _, id := range []string{agentA, agentB, agentC} {
 		h.paseo.list = append(h.paseo.list, paseo.Obj("id", id, "status", "idle"))
 	}
-	h.k.ApplyDefault(context.Background())
+	h.k.RefreshListing(context.Background())
 	if c := h.cache(agentA); c == nil || c.Policy != PolicyWarm || c.SetBy != "default" {
 		t.Fatalf("recent agent: %+v", c)
 	}
@@ -543,7 +543,7 @@ func TestDefaultPolicyFilter(t *testing.T) {
 	}
 	// Decided policies are not overwritten.
 	h.set(agentA, PolicyOff)
-	h.k.ApplyDefault(context.Background())
+	h.k.RefreshListing(context.Background())
 	if c := h.cache(agentA); c.Policy != PolicyOff {
 		t.Fatalf("default overwrote a decision: %+v", c)
 	}

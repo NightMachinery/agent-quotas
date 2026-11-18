@@ -420,9 +420,9 @@ The daemon is the one per-machine process that sends timed prompts to idle
 agents: auto-continue, keepalive pings, and compaction before the prompt cache
 expires. agent-desk shows and toggles the policy through this API and keeps the
 history; it stores no policy of its own. The keeper ships **disabled**
-(`keeper.enabled: false`): the read API answers, nothing is observed on a
-timer, nothing is sent, and the acting endpoints refuse with
-`keeper_disabled`.
+(`keeper.enabled: false`): the read API answers (the daemon still observes,
+read-only, to serve it), nothing is written or sent, and the acting endpoints
+refuse with `keeper_disabled`.
 
 Terms:
 
@@ -550,11 +550,17 @@ at or after the cache expiry, for instance because the machine slept) is
 skipped, not caught up: pinging a cold cache pays the full price and keeps
 nothing.
 
-While enabled, the daemon observes the agents with a policy every 60 s from
-Paseo's stored record, the transcript and the store (cheap file reads), runs
-`paseo inspect` only when an action is due (and again under the lock), follows
-compactions in flight every 10 s (`paseo inspect` and `paseo logs`), and reads
-the global agent list (`paseo ls`) every 5 minutes for the default policy.
+The daemon observes every agent with a file every 60 s from Paseo's stored
+record, the transcript and the store (file reads only), and, while enabled,
+runs `paseo inspect` only when an action is due (and again under the lock),
+follows compactions in flight every 10 s (`paseo inspect` and `paseo logs`),
+and applies the default policy after each global agent list (`paseo ls`,
+at start and every 5 minutes). Each agent's observation runs on a pool of 8
+workers, at most one piece of work per agent at a time, with its external
+commands bounded to 30 s (`paseo ls` to 60 s); a round does not wait for a slow
+agent, so a hung transcript or `paseo inspect` delays only that agent. A send
+is not cut short by these bounds (only by the CLI's own 60 s timeout), since a
+killed send has an uncertain outcome.
 
 ### Sending and the marker
 
@@ -610,15 +616,17 @@ then fails with `error: "not idle"`.
 
 ### API
 
-Read (answered with the keeper disabled too):
+Read (answered with the keeper disabled too, always from memory; see
+"Serving reads from memory" below):
 
 - `GET /v1/agents[?policy=warm|compact|off|any][&all=1][&home=DIR]` →
-  `{schema_version, generated_at, keeper_enabled, agents: [Agent]}`: every agent with a file
-  (`policy` filters; `any` means not `off`), plus, with `all=1`, every agent
-  Paseo lists. Built from the stored records and transcripts, without
-  `paseo inspect`.
+  `{schema_version, generated_at, keeper_enabled, [listed_at,] agents:
+  [Agent]}`: every agent with a file (`policy` filters; `any` means not
+  `off`), plus, with `all=1`, every agent the last `paseo ls` of that home
+  listed; `listed_at` (only with `all=1`) is when that listing ran, absent
+  before the first.
 - `GET /v1/agents/{id}[?home=DIR]` → `{schema_version, generated_at, agent:
-  Agent}`, with a fresh `paseo inspect`. 404 when Paseo does not know the agent.
+  Agent}`. 404 when Paseo does not know the agent.
 - **Long-poll:** `GET /v1/agents/{id}?wait_compaction=<compaction id>&timeout=60`
   answers when that compaction is terminal (`completed|failed|canceled`) or on
   timeout (capped at 120 s), with the same document. Polling GET stays the
@@ -639,9 +647,13 @@ Read (answered with the keeper disabled too):
   "sendable": {"ok": true, "reason": ""},
   "next_action": {"kind": "ping|compact|none", "at": 1795035300, "reason": "…"},
   "auto_continue": {"enabled": true, "status": "waiting for a quota-failed turn"},
-  "lock_path": "…/<hash16>-<agent>.lock"
+  "lock_path": "…/<hash16>-<agent>.lock",
+  "observed_at": 1795035240
 }
 ```
+
+`observed_at` is when the data behind the document was read (null for an
+agent known only from a registration or a listing and not observed yet).
 
 `cache_expires_at` is the keeper's estimate. The desk's cold-cache dialog can
 show "idle longer than the TTL and big" from `cache_expires_at < now && big`.
@@ -656,6 +668,16 @@ Act (refused with 503 `keeper_disabled` while disabled):
   agent.
 - `POST /v1/agents/{id}/standby` `{"set_by": …}` → the Agent (policy
   `compact`).
+
+  Both answer with the same envelope as `GET /v1/agents/{id}`, the agent
+  observed right after the write (reusing the `paseo inspect` the request
+  made to check the agent):
+
+  ```json
+  {"schema_version": 1, "generated_at": 1795035300.2,
+   "agent": {"id": "…", "cache": {"policy": "compact", "standby_at": 1795035300.1,
+             "phase": "standby", …}, "observed_at": 1795035300.2, …}}
+  ```
 - `POST /v1/agents/{id}/compact` → `{"compaction_id": "c-…", "state":
   "queued|sent|failed"}` (`failed` when the immediate send failed). An agent
   without a file gets one (policy `off`, `set_at` 0) to hold the compaction. The desk long-polls (or polls) `GET /v1/agents/{id}` until
@@ -677,6 +699,41 @@ only to hold a manual compaction, `set_at` 0), when the daemon first sees them,
 and only to agents that are not archived and had real activity in the last
 24 h), `ttl_seconds`, `lead_seconds`, `quiet_seconds`,
 `warm_hours`, `ping_text`, `send_behavior`, `compaction_timeout_seconds`.
+
+### Serving reads from memory
+
+Every GET answers from the keeper's memory, never from a per-request
+recomputation: no `paseo inspect`, `paseo ls` or transcript scan runs inside a
+GET. Measured on mb2 before this (23 agents with a file, about 380 Paseo
+agents, a heavily loaded machine): `paseo inspect` took about 3 s per agent
+and `paseo ls` about 4 s, so one agent's GET took 8 to 45 s and `all=1` up to
+two minutes. From memory, a GET of 200 synthetic agents takes about 2 ms.
+
+- **What is kept:** per agent, its last **observation** (the registration
+  file, Paseo's stored record and, when one was made, `paseo inspect`, the
+  transcript activity, the seat and the quota-failure check) and when it was
+  made (`observed_at`); per Paseo home, the last `paseo ls`.
+- **When it changes:** each observation (the 60 s rounds, the 10 s rounds for
+  compactions in flight, the inspect before an action), each write the keeper
+  makes (policy, standby, compaction request, ping and compaction records,
+  bookkeeping), each listing (agents listed without a file are observed then,
+  from files only; agents no longer listed and without a file are dropped).
+  A registration that disappears leaves the file list at the next 10 s round.
+- **What a read computes:** the derived fields only (phase, `warm_until`,
+  `next_action`, `sendable`, `cache_expires_at`), from the kept observation
+  and the time of the answer, with no I/O. So `next_action` and `phase` are
+  current while the data behind them is as old as `observed_at` (at most about
+  60 s for an agent with a file, 5 minutes for one only listed).
+- **Start:** the daemon observes every registration from files before the
+  first read is answered; reads wait for that at most 5 s, then answer with
+  what is there (agents with a file not yet observed appear with
+  `observed_at` null and no cache data, and only when no `policy` filter is
+  given). `all=1` adds nothing until the first listing ends.
+- **An agent never observed** (created since the last listing): its GET
+  observes it once from its files (no external command) and keeps the result.
+  When that takes more than 2 s the answer is 503 `not_observed`; ask again.
+- **Long-poll** (`wait_compaction`) wakes on every keeper write, which
+  updates memory first, and re-reads memory every 5 s otherwise.
 
 ### Other senders and the lock
 

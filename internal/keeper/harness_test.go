@@ -42,9 +42,37 @@ type fakePaseo struct {
 	sendErr  error
 	inspErr  error
 	onSend   func(agent, text string)
+	// calls counts Inspect, List, Logs and Send; delay slows Inspect and
+	// List down.
+	calls map[string]int
+	delay time.Duration
+}
+
+func (f *fakePaseo) count(name string) {
+	f.mu.Lock()
+	if f.calls == nil {
+		f.calls = map[string]int{}
+	}
+	f.calls[name]++
+	d := f.delay
+	f.mu.Unlock()
+	if d > 0 && (name == "inspect" || name == "list") {
+		time.Sleep(d)
+	}
+}
+
+func (f *fakePaseo) callCount() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	n := 0
+	for _, c := range f.calls {
+		n += c
+	}
+	return n
 }
 
 func (f *fakePaseo) Inspect(_ context.Context, id, _ string) (*paseo.Object, error) {
+	f.count("inspect")
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if f.inspErr != nil {
@@ -58,6 +86,7 @@ func (f *fakePaseo) Inspect(_ context.Context, id, _ string) (*paseo.Object, err
 }
 
 func (f *fakePaseo) Send(_ context.Context, id, _, text, behavior string) error {
+	f.count("send")
 	f.mu.Lock()
 	if f.sendErr != nil {
 		f.mu.Unlock()
@@ -73,13 +102,17 @@ func (f *fakePaseo) Send(_ context.Context, id, _, text, behavior string) error 
 }
 
 func (f *fakePaseo) Logs(_ context.Context, id, _ string, _ time.Time) ([]*paseo.Object, error) {
+	f.count("logs")
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return f.logs[id], nil
 }
 
 func (f *fakePaseo) List(context.Context, string) ([]*paseo.Object, error) {
-	return f.list, nil
+	f.count("list")
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]*paseo.Object(nil), f.list...), nil
 }
 
 func (f *fakePaseo) sends() []sentMsg {
@@ -265,7 +298,12 @@ func (h *harness) set(id, policy string) View {
 	return v
 }
 
+// view observes the agent (as the loop would, with paseo inspect) and
+// reads its document from memory.
 func (h *harness) view(id string) View {
+	if o, err := h.k.observe(context.Background(), id, h.home, true); err == nil {
+		h.k.store(o)
+	}
 	v, err := h.k.Agent(context.Background(), id, h.home)
 	if err != nil {
 		h.t.Fatal(err)

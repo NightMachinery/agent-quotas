@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"regexp"
+	"strings"
+	"sync"
 	"time"
 
 	"github.com/NightMachinery/agent-quotas/internal/model"
@@ -22,33 +24,40 @@ const (
 // cancelText is how a compaction turn that ended without compacting reads.
 var cancelText = regexp.MustCompile(`(?i)compaction\s+cancel`)
 
-// Run observes and acts until ctx ends. It does nothing while the keeper
-// is disabled; the read API works either way.
+// Run observes, and acts when the keeper is enabled, until ctx ends. It
+// observes even while the keeper is disabled: the read API serves its
+// observations.
 func (k *Keeper) Run(ctx context.Context) {
 	k.init()
-	if !k.Enabled() {
-		return
-	}
+	k.prime(ctx)
+	go func() {
+		ticker := time.NewTicker(defaultEvery)
+		defer ticker.Stop()
+		for {
+			k.RefreshListing(ctx)
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+			}
+		}
+	}()
 	ticker := time.NewTicker(tickEvery)
 	defer ticker.Stop()
-	var lastFull, lastDefault time.Time
+	var lastFull time.Time
 	for {
 		now := k.now()
 		full := now.Sub(lastFull) >= observeEvery
 		if full {
 			lastFull = now
 		}
-		k.Round(ctx, full)
-		if now.Sub(lastDefault) >= defaultEvery {
-			lastDefault = now
-			k.ApplyDefault(ctx)
-		}
+		k.round(ctx, full, false, false)
 		select {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
 		case path := <-k.kick:
-			k.Step(ctx, path)
+			k.stepAsync(ctx, path)
 		}
 	}
 }
@@ -65,31 +74,90 @@ func (k *Keeper) request(path string) {
 	}
 }
 
+// stepAsync steps one registration on the worker pool.
+func (k *Keeper) stepAsync(ctx context.Context, path string) {
+	state, err := paseo.ReadObject(path)
+	if err != nil {
+		return
+	}
+	id, _ := state.String("agent_id")
+	home, _ := state.String("home")
+	if id == "" {
+		return
+	}
+	k.dispatch(ctx, key(k.Engine.ResolveHome(home), id), func(ctx context.Context) { k.Step(ctx, path) }, nil)
+}
+
 // Round steps every registration with a policy (full) or with a compaction
-// in flight (every round).
-func (k *Keeper) Round(ctx context.Context, full bool) {
+// in flight (every round), and observes the others (full), then waits for
+// that work.
+func (k *Keeper) Round(ctx context.Context, full bool) { k.round(ctx, full, true, false) }
+
+// round is Round. Each agent's work runs on the worker pool, at most one
+// piece per agent at a time, so a slow agent delays only itself; without
+// wait the round returns at once. With all, every registration is observed
+// whatever its policy.
+func (k *Keeper) round(ctx context.Context, full, wait, all bool) {
 	regs, err := k.Engine.Registrations()
 	if err != nil {
 		k.Log.Printf("keeper: registrations: %v", err)
 		return
 	}
+	var wg *sync.WaitGroup
+	if wait {
+		wg = &sync.WaitGroup{}
+	}
+	enabled := k.Enabled()
+	seen := map[string]string{}
 	for _, r := range regs {
 		if ctx.Err() != nil {
 			return
 		}
-		state, err := paseo.ReadObject(r.Path)
-		if err != nil {
+		if r.AgentID == "" {
 			continue
 		}
-		c, err := readCache(state)
-		if err != nil || c == nil {
-			continue
+		path, id, home := r.Path, r.AgentID, k.Engine.ResolveHome(r.Home)
+		agentKey := key(home, id)
+		seen[agentKey] = path
+		step := false
+		if enabled {
+			if state, err := paseo.ReadObject(path); err == nil {
+				if c, err := readCache(state); err == nil && c != nil {
+					on := c.Policy != PolicyOff && c.Policy != ""
+					step = c.Compaction.inFlight() || full && (on || needsTokensAfter(c))
+				}
+			}
 		}
-		busy := c.Compaction.inFlight()
-		if !busy && (!full || (c.Policy == PolicyOff || c.Policy == "") && !needsTokensAfter(c)) {
-			continue
+		_, have := k.cached(home, id)
+		switch {
+		case step:
+			k.dispatch(ctx, agentKey, func(ctx context.Context) { k.Step(ctx, path) }, wg)
+		case full || all || !have:
+			k.dispatch(ctx, agentKey, func(ctx context.Context) { _, _ = k.observeStore(ctx, id, home) }, wg)
 		}
-		k.Step(ctx, r.Path)
+	}
+	// Agents whose registration is gone stay readable while Paseo lists
+	// them (looked at again without the file); the others are dropped.
+	m := k.mem()
+	m.mu.Lock()
+	gone := []string{}
+	for agentKey := range m.regs {
+		if _, ok := seen[agentKey]; !ok {
+			gone = append(gone, agentKey)
+		}
+	}
+	m.regs = seen
+	m.mu.Unlock()
+	for _, agentKey := range gone {
+		home, id, _ := strings.Cut(agentKey, "\x00")
+		if k.isListed(home, id) {
+			k.dispatch(ctx, agentKey, func(ctx context.Context) { _, _ = k.observeStore(ctx, id, home) }, wg)
+		} else {
+			k.forget(home, id, false)
+		}
+	}
+	if wg != nil {
+		wg.Wait()
 	}
 }
 
@@ -109,7 +177,11 @@ func (k *Keeper) Step(ctx context.Context, path string) {
 	agentID, _ := state.String("agent_id")
 	home, _ := state.String("home")
 	o, err := k.observe(ctx, agentID, home, false)
-	if err != nil || o.cache == nil {
+	if err != nil {
+		return
+	}
+	k.store(o)
+	if o.cache == nil {
 		return
 	}
 	k.bookkeep(o)
@@ -132,6 +204,7 @@ func (k *Keeper) Step(ctx context.Context, path string) {
 		k.note(path, "inspect failed: "+err.Error())
 		return
 	}
+	k.store(o)
 	v = k.view(o)
 	if v.NextAction.Kind == ActNone || *v.NextAction.At > now {
 		return
@@ -235,6 +308,7 @@ func (k *Keeper) rewrite(path string, fn func(state *paseo.Object, c *Cache) boo
 	if err := paseo.AtomicWrite(path, state); err != nil {
 		return err
 	}
+	k.refreshPath(path)
 	k.signal()
 	return nil
 }
@@ -277,7 +351,11 @@ func (k *Keeper) act(ctx context.Context, o *obs, a Action) {
 	}
 	defer unlock()
 	fresh, err := k.observe(ctx, o.agentID, o.home, true)
-	if err != nil || fresh.cache == nil {
+	if err != nil {
+		return
+	}
+	k.store(fresh)
+	if fresh.cache == nil {
 		return
 	}
 	v := k.view(fresh)
@@ -360,6 +438,7 @@ func (k *Keeper) progress(ctx context.Context, o *obs) {
 	fresh, err := k.observe(ctx, o.agentID, o.home, true)
 	if err == nil {
 		o = fresh
+		k.store(o)
 	}
 	if o.archived() {
 		k.finish(o.path, comp.ID, StateFailed, "archived")
@@ -368,7 +447,9 @@ func (k *Keeper) progress(ctx context.Context, o *obs) {
 	if err == nil {
 		status := o.status()
 		idle := status == "idle" || status == "closed"
-		items, lerr := k.Paseo.Logs(ctx, o.agentID, o.home, model.Time(comp.SentAt-2))
+		lctx, cancel := context.WithTimeout(ctx, observeTimeout)
+		items, lerr := k.Paseo.Logs(lctx, o.agentID, o.home, model.Time(comp.SentAt-2))
+		cancel()
 		if lerr == nil {
 			completed, canceled := scanTimeline(items)
 			switch {
@@ -410,41 +491,40 @@ func scanTimeline(items []*paseo.Object) (completed, canceled bool) {
 	return completed, canceled
 }
 
-// ApplyDefault gives the default policy, once, to recently active agents
-// whose policy was never decided.
-func (k *Keeper) ApplyDefault(ctx context.Context) {
+// applyDefault gives the default policy, once, to recently active agents
+// of a listing whose policy was never decided. It decides from the
+// observations in memory and looks again (files only) before setting.
+func (k *Keeper) applyDefault(ctx context.Context, home string, list []*paseo.Object) {
 	policy := k.Config.Keeper.DefaultPolicy
 	if policy == "" || policy == PolicyOff || !k.Enabled() {
 		return
 	}
-	for _, h := range k.Config.Paseo.Homes {
-		home := k.Engine.ResolveHome(h)
-		list, err := k.Paseo.List(ctx, home)
-		if err != nil {
-			k.Log.Printf("keeper: paseo ls: %v", err)
+	undecided := func(o *obs) bool {
+		if o.record == nil || o.archived() || o.record.Value("internal") == true {
+			return false
+		}
+		if o.cache != nil && o.cache.SetAt > 0 {
+			return false // decided before
+		}
+		v := k.view(o)
+		return v.realAt > 0 && k.nowS()-v.realAt <= defaultRecent.Seconds()
+	}
+	for _, item := range list {
+		raw, _ := item.String("id")
+		id, ok := paseo.CanonicalID(raw)
+		if !ok || ctx.Err() != nil {
 			continue
 		}
-		for _, item := range list {
-			raw, _ := item.String("id")
-			id, ok := paseo.CanonicalID(raw)
-			if !ok || ctx.Err() != nil {
-				continue
-			}
-			o, err := k.observe(ctx, id, home, false)
-			if err != nil || o.record == nil || o.archived() || o.record.Value("internal") == true {
-				continue
-			}
-			if o.cache != nil && o.cache.SetAt > 0 {
-				continue // decided before
-			}
-			v := k.view(o)
-			if v.realAt <= 0 || k.nowS()-v.realAt > defaultRecent.Seconds() {
-				continue
-			}
-			if _, err := k.setPolicy(ctx, id, home, policy, 0, "default", false); err != nil &&
-				!errors.Is(err, ErrBadRequest) {
-				k.Log.Printf("keeper %s: default policy: %v", id, err)
-			}
+		e, ok := k.cached(home, id)
+		if !ok || !undecided(e.o) {
+			continue
+		}
+		if o, err := k.observeStore(ctx, id, home); err != nil || !undecided(o) {
+			continue
+		}
+		if _, err := k.setPolicy(ctx, id, home, policy, 0, "default", false); err != nil &&
+			!errors.Is(err, ErrBadRequest) {
+			k.Log.Printf("keeper %s: default policy: %v", id, err)
 		}
 	}
 }

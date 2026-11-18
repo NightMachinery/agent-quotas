@@ -78,6 +78,9 @@ var (
 	ErrDisabled     = errors.New("the keeper is disabled (keeper.enabled is false)")
 	ErrUnknownAgent = errors.New("Paseo does not know this agent")
 	ErrBadRequest   = errors.New("bad request")
+	// ErrNotObserved: the agent has not been observed yet and its first
+	// observation is slow; ask again shortly.
+	ErrNotObserved = errors.New("the agent has not been observed yet; try again shortly")
 )
 
 // Paseo is the access to the Paseo daemon the keeper needs.
@@ -165,6 +168,9 @@ type Keeper struct {
 	busy     map[string]time.Time // registration path -> lock found held
 	lastSeen map[string]string    // registration path -> last logged state
 	kick     chan string
+
+	memOnce sync.Once
+	m       *memory
 }
 
 // New returns a keeper over the Paseo engine's registrations.
@@ -316,8 +322,15 @@ type obs struct {
 }
 
 // observe reads everything about one agent. With inspect, `paseo inspect`
-// is asked too; otherwise Paseo's stored record stands in for it.
+// is asked too (bounded by observeTimeout); otherwise Paseo's stored record
+// stands in for it.
 func (k *Keeper) observe(ctx context.Context, agentID, home string, inspect bool) (*obs, error) {
+	return k.observeWith(ctx, agentID, home, inspect, nil)
+}
+
+// observeWith is observe; a non-nil given is a `paseo inspect` answer the
+// caller already has.
+func (k *Keeper) observeWith(ctx context.Context, agentID, home string, inspect bool, given *paseo.Object) (*obs, error) {
 	home = k.Engine.ResolveHome(home)
 	path, err := k.Engine.RegistrationPath(agentID, home)
 	if err != nil {
@@ -336,8 +349,13 @@ func (k *Keeper) observe(ctx context.Context, agentID, home string, inspect bool
 		return nil, err
 	}
 	o.record, _ = k.Engine.Stored(agentID, o.home)
-	if inspect {
-		o.inspect, err = k.Paseo.Inspect(ctx, agentID, o.home)
+	switch {
+	case given != nil:
+		o.inspect = given
+	case inspect:
+		ictx, cancel := context.WithTimeout(ctx, observeTimeout)
+		o.inspect, err = k.Paseo.Inspect(ictx, agentID, o.home)
+		cancel()
 		if err != nil {
 			return nil, err
 		}
@@ -492,6 +510,9 @@ type View struct {
 	NextAction         Action        `json:"next_action"`
 	AutoContinue       *AutoContinue `json:"auto_continue"`
 	LockPath           *string       `json:"lock_path"`
+	// ObservedAt is when the data behind this document was read; the
+	// time-dependent fields are evaluated at the answer's generated_at.
+	ObservedAt *float64 `json:"observed_at"`
 
 	// realAt etc. are the plain numbers behind the pointers.
 	realAt, cacheAt, expiry, warmUntil float64
@@ -512,7 +533,7 @@ func (k *Keeper) view(o *obs) View {
 	now := k.nowS()
 	v := View{ID: o.agentID, Home: o.home, Title: o.title(), Status: o.status(),
 		PendingPermission: o.pendingPermission(), Archived: o.archived(), Seat: o.seat,
-		MinContextTokens: MinContextTokens(cfg.CompactionFile)}
+		MinContextTokens: k.minContext()}
 	if o.identOK {
 		v.Provider = o.ident.Agent
 	} else if o.record != nil {

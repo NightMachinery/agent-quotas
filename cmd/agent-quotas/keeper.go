@@ -79,7 +79,7 @@ func claudeOverage(s model.Snapshot) bool {
 }
 
 // attachKeeper adds the keeper's API to the daemon and returns its loop
-// (which returns at once while the keeper is disabled).
+// (which only observes, for the read API, while the keeper is disabled).
 func attachKeeper(cfg *config.Config, d *daemon.Daemon, srv *daemon.Server, quotas quotaAdapter, logger *log.Logger) func(context.Context) {
 	eng := paseo.New(cfg, quotas)
 	seats := keeperSeats{q: quotas, snap: func(ctx context.Context, id string) (model.Snapshot, error) {
@@ -90,7 +90,7 @@ func attachKeeper(cfg *config.Config, d *daemon.Daemon, srv *daemon.Server, quot
 	if cfg.KeeperEnabled() {
 		logger.Printf("keeper enabled (default policy %s)", cfg.Keeper.DefaultPolicy)
 	} else {
-		logger.Printf("keeper disabled (keeper.enabled is false): read API only")
+		logger.Printf("keeper disabled (keeper.enabled is false): observing for the read API only")
 	}
 	return k.Run
 }
