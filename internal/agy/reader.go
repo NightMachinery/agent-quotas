@@ -364,11 +364,13 @@ func (r *Reader) refreshIfUsed(ctx context.Context, a Account, rows []cacheRow, 
 
 // LastUsed is when agy last wrote to this account's state: a conversation
 // or its summary index, which every turn touches, TUI or not. Zero when
-// neither exists.
+// neither exists. Lstat, not Stat: a second account may symlink its
+// conversations to the main account's, and following the link would count
+// the main account's turns as its own.
 func (a Account) LastUsed() time.Time {
 	var t time.Time
 	for _, name := range []string{"conversations", "conversation_summaries.db"} {
-		if fi, err := os.Stat(filepath.Join(a.CLIDir(), name)); err == nil && fi.ModTime().After(t) {
+		if fi, err := os.Lstat(filepath.Join(a.CLIDir(), name)); err == nil && fi.Mode()&os.ModeSymlink == 0 && fi.ModTime().After(t) {
 			t = fi.ModTime()
 		}
 	}

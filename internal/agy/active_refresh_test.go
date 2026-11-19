@@ -63,3 +63,24 @@ func TestActiveRefreshOff(t *testing.T) {
 		t.Fatalf("source %q calls %d, want the cache", snap.Source, len(f.agy.calls))
 	}
 }
+
+// A second account whose conversations link to the main account's does not
+// count the main account's turns as its own.
+func TestSymlinkedConversationsAreNotUse(t *testing.T) {
+	f := newFixture(t)
+	m := ResolveAccount(f.cfg.Agy.Accounts[indexOf(f.cfg, "m")])
+	cave := ResolveAccount(f.cfg.Agy.Accounts[indexOf(f.cfg, "cave")])
+	shared := filepath.Join(m.CLIDir(), "conversations")
+	if err := os.MkdirAll(shared, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(shared, filepath.Join(cave.CLIDir(), "conversations")); err != nil {
+		t.Fatal(err)
+	}
+	if !m.LastUsed().After(time.Time{}) {
+		t.Fatal("m's own conversations should count")
+	}
+	if got := cave.LastUsed(); !got.IsZero() {
+		t.Fatalf("cave LastUsed %v through a symlink, want zero", got)
+	}
+}
