@@ -708,7 +708,7 @@ func TestOnWritesPythonCompatibleRegistration(t *testing.T) {
 		t.Fatal(err)
 	}
 	state, _ := DecodeObject(data)
-	wantKeys := []string{"version", "enabled", "home", "agent_id", "binding", "poll", "status", "registered_at"}
+	wantKeys := []string{"version", "enabled", "home", "agent_id", "binding", "poll", "status", "registered_at", "set_by"}
 	if !reflect.DeepEqual(state.Keys(), wantKeys) {
 		t.Fatal(state.Keys())
 	}

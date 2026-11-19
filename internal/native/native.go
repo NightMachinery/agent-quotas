@@ -25,9 +25,8 @@ import (
 	"github.com/NightMachinery/agent-quotas/internal/procx"
 )
 
-// DefaultText is the old agent_auto_continue_text: self-limiting, so a wrong
-// resume happens once rather than at every reset.
-const DefaultText = "Continue. Only if nothing at all remains of your work (no open items, nothing waiting on other agents or on me), say so briefly and run: zsh -c agent-auto-continue-off"
+// DefaultText is the resume prompt for a native terminal.
+const DefaultText = "Continue. If your work is complete, say so briefly."
 
 // Default idle thresholds per target kind, in seconds. Only frontmost (and
 // any kind without a setting) waits for the keyboard to be idle.

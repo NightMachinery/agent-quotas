@@ -1,0 +1,6 @@
+{
+  "id": "agent-quotas",
+  "name": "Agent quotas",
+  "description": "Inspect a Paseo agent's quota, auto-continue and cache policy, and manage its settings.",
+  "requirements": { "paseo": ">=0.15.4" }
+}

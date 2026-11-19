@@ -162,6 +162,8 @@ type Keeper struct {
 	Now func() time.Time
 	// NewID makes compaction ids; nil means random "c-" + 12 hex digits.
 	NewID func() string
+	// AutoContinueChanged queues a check after a registration is enabled.
+	AutoContinueChanged func(path string)
 
 	mu       sync.Mutex
 	changed  chan struct{}
@@ -494,6 +496,7 @@ type Sendable struct {
 type AutoContinue struct {
 	Enabled bool   `json:"enabled"`
 	Status  string `json:"status"`
+	SetBy   string `json:"set_by,omitempty"`
 }
 
 // CacheView is the stored cache object plus its phase.
@@ -504,30 +507,32 @@ type CacheView struct {
 
 // View is the API's Agent document.
 type View struct {
-	ID                 string        `json:"id"`
-	Home               string        `json:"home"`
-	Title              *string       `json:"title"`
-	Provider           string        `json:"provider"`
-	Status             string        `json:"status"`
-	PendingPermission  bool          `json:"pending_permission"`
-	Archived           bool          `json:"archived"`
-	LastActivityAt     *float64      `json:"last_activity_at"`
-	LastActivitySource string        `json:"last_activity_source"`
-	CacheActivityAt    *float64      `json:"cache_activity_at"`
-	ContextTokens      *int64        `json:"context_tokens"`
-	MinContextTokens   int64         `json:"min_context_tokens"`
-	Big                bool          `json:"big"`
-	TTLSeconds         int           `json:"ttl_seconds"`
-	TTLReason          string        `json:"ttl_reason"`
-	CacheExpiresAt     *float64      `json:"cache_expires_at"`
-	Seat               *Seat         `json:"seat"`
-	Cache              *CacheView    `json:"cache"`
-	WarmUntil          *float64      `json:"warm_until"`
-	PingsSinceActivity int           `json:"pings_since_activity"`
-	Sendable           Sendable      `json:"sendable"`
-	NextAction         Action        `json:"next_action"`
-	AutoContinue       *AutoContinue `json:"auto_continue"`
-	LockPath           *string       `json:"lock_path"`
+	KeeperEnabled             bool          `json:"keeper_enabled"`
+	AutoContinueEngineEnabled bool          `json:"auto_continue_engine_enabled"`
+	ID                        string        `json:"id"`
+	Home                      string        `json:"home"`
+	Title                     *string       `json:"title"`
+	Provider                  string        `json:"provider"`
+	Status                    string        `json:"status"`
+	PendingPermission         bool          `json:"pending_permission"`
+	Archived                  bool          `json:"archived"`
+	LastActivityAt            *float64      `json:"last_activity_at"`
+	LastActivitySource        string        `json:"last_activity_source"`
+	CacheActivityAt           *float64      `json:"cache_activity_at"`
+	ContextTokens             *int64        `json:"context_tokens"`
+	MinContextTokens          int64         `json:"min_context_tokens"`
+	Big                       bool          `json:"big"`
+	TTLSeconds                int           `json:"ttl_seconds"`
+	TTLReason                 string        `json:"ttl_reason"`
+	CacheExpiresAt            *float64      `json:"cache_expires_at"`
+	Seat                      *Seat         `json:"seat"`
+	Cache                     *CacheView    `json:"cache"`
+	WarmUntil                 *float64      `json:"warm_until"`
+	PingsSinceActivity        int           `json:"pings_since_activity"`
+	Sendable                  Sendable      `json:"sendable"`
+	NextAction                Action        `json:"next_action"`
+	AutoContinue              *AutoContinue `json:"auto_continue"`
+	LockPath                  *string       `json:"lock_path"`
 	// ObservedAt is when the data behind this document was read; the
 	// time-dependent fields are evaluated at the answer's generated_at.
 	ObservedAt *float64 `json:"observed_at"`
@@ -551,7 +556,8 @@ func (k *Keeper) view(o *obs) View {
 	now := k.nowS()
 	v := View{ID: o.agentID, Home: o.home, Title: o.title(), Status: o.status(),
 		PendingPermission: o.pendingPermission(), Archived: o.archived(), Seat: o.seat,
-		MinContextTokens: k.minContext()}
+		MinContextTokens: k.minContext(), KeeperEnabled: k.Enabled(),
+		AutoContinueEngineEnabled: k.Config.Paseo.AutoContinueEnabled()}
 	if o.identOK {
 		v.Provider = o.ident.Agent
 	} else if o.record != nil {
@@ -563,6 +569,7 @@ func (k *Keeper) view(o *obs) View {
 		ac := AutoContinue{}
 		ac.Enabled, _ = o.state.Value("enabled").(bool)
 		ac.Status, _ = o.state.String("status")
+		ac.SetBy, _ = o.state.String("set_by")
 		v.AutoContinue = &ac
 	}
 

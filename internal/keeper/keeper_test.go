@@ -626,3 +626,103 @@ func TestMinContextTokens(t *testing.T) {
 		t.Fatalf("got %d", n)
 	}
 }
+
+func TestDefaultAutoContinueFilter(t *testing.T) {
+	h := newHarness(t)
+	h.now = t0 + 25*3600
+	h.agent(agentA, sessionA)
+	h.realTurn(sessionA, h.now-3600, small)
+	h.set(agentA, PolicyWarm) // a cache-only file leaves auto-continue undecided
+	h.agent(agentB, sessionB)
+	h.realTurn(sessionB, t0, small)
+	h.agent(agentC, sessionC)
+	h.record(agentC, sessionC, "idle", map[string]any{"archivedAt": iso(h.now)})
+	h.agent(agentD, sessionD)
+	h.record(agentD, sessionD, "idle", map[string]any{"labels": paseo.Obj(parentLabel, agentA)})
+	h.agent(agentE, sessionE)
+	h.record(agentE, sessionE, "idle", map[string]any{"parentAgentId": agentA})
+	for _, id := range []string{agentA, agentB, agentC, agentD, agentE} {
+		h.paseo.list = append(h.paseo.list, paseo.Obj("id", id))
+	}
+
+	ctx := context.Background()
+	h.k.RefreshListing(ctx)
+	if ac := h.view(agentA).AutoContinue; ac == nil || ac.Enabled {
+		t.Fatalf("default was already enabled: %+v", ac)
+	}
+	h.cfg.Paseo.DefaultAutoContinue = true
+	off := false
+	h.cfg.Paseo.Enabled = &off
+	h.k.RefreshListing(ctx)
+	if ac := h.view(agentA).AutoContinue; ac == nil || ac.Enabled {
+		t.Fatalf("default ran while the Paseo engine was disabled: %+v", ac)
+	}
+	h.cfg.Paseo.Enabled = nil
+	h.cfg.Keeper.Enabled = &off
+	h.k.RefreshListing(ctx)
+	if ac := h.view(agentA).AutoContinue; ac == nil || !ac.Enabled || ac.SetBy != "default" {
+		t.Fatalf("recent main agent: %+v", ac)
+	}
+	if c := h.cache(agentA); c == nil || c.Policy != PolicyWarm {
+		t.Fatalf("default changed cache policy: %+v", c)
+	}
+	for _, id := range []string{agentB, agentC, agentD, agentE} {
+		if _, err := os.Stat(h.path(id)); !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("%s got a file: %v", id, err)
+		}
+	}
+	if _, err := h.eng.Off(ctx, agentA, h.home); err != nil {
+		t.Fatal(err)
+	}
+	h.k.RefreshListing(ctx)
+	h.k.refreshPath(h.path(agentA))
+	if ac := h.view(agentA).AutoContinue; ac == nil || ac.Enabled || ac.SetBy != "cli" {
+		t.Fatalf("default replaced explicit off: %+v", ac)
+	}
+}
+
+func TestDefaultAutoContinuePreservesPriorDecisions(t *testing.T) {
+	h := newHarness(t)
+	h.cfg.Paseo.DefaultAutoContinue = true
+	h.agent(agentA, sessionA)
+	h.agent(agentB, sessionB)
+	h.agent(agentC, sessionC)
+	h.agent(agentD, sessionD)
+	h.record(agentD, sessionD, "idle", map[string]any{"internal": true})
+	ctx := context.Background()
+	if _, err := h.eng.Off(ctx, agentA, h.home); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.k.setAutoContinue(ctx, agentB, h.home, false, "api"); err != nil {
+		t.Fatal(err)
+	}
+	// Older cache-only and explicitly disabled records are indistinguishable.
+	h.set(agentC, PolicyWarm)
+	state, err := paseo.ReadObject(h.path(agentC))
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacy := paseo.NewObject()
+	for _, key := range state.Keys() {
+		if key != "set_by" {
+			legacy.Set(key, state.Value(key))
+		}
+	}
+	if err := paseo.AtomicWrite(h.path(agentC), legacy); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, id := range []string{agentA, agentB, agentC, agentD} {
+		h.paseo.list = append(h.paseo.list, paseo.Obj("id", id))
+	}
+	h.k.RefreshListing(ctx)
+	for _, tc := range []struct{ id, source string }{{agentA, "cli"}, {agentB, "api"}, {agentC, ""}} {
+		h.k.refreshPath(h.path(tc.id))
+		if ac := h.view(tc.id).AutoContinue; ac == nil || ac.Enabled || ac.SetBy != tc.source {
+			t.Fatalf("default changed %s: %+v", tc.id, ac)
+		}
+	}
+	if _, err := os.Stat(h.path(agentD)); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("internal agent got a file: %v", err)
+	}
+}

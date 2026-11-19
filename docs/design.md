@@ -109,7 +109,7 @@ JSON, every key optional:
     "agy_binary": "agy"
   },
   "poll": {"force_floor_s": 5, "backoff_max_s": 1800},
-  "paseo": {"homes": ["~/.paseo"], "registrations_dir": "", "send_behavior": ""},
+  "paseo": {"homes": ["~/.paseo"], "registrations_dir": "", "send_behavior": "", "default_auto_continue": false},
   "keeper": {"enabled": false, "default_policy": "off", "ttl_seconds": {"claude": 3600, "codex": 1800},
              "lead_seconds": 300, "quiet_seconds": 60, "warm_hours": 6, "ping_text": "",
              "send_behavior": "steer", "compaction_timeout_seconds": 1200,
@@ -279,9 +279,10 @@ Acting endpoints:
 - `POST /v1/continue/check` `{"kind": "native", "scope": "claude-work"}` or
   `{"kind": "paseo", "path": "<registration file>"}` (empty: all): queue a check now
 
-Registering (`continue on|off`) and the hook's marking run in the CLI process,
-because they need the caller's environment (session ids, `TMUX_PANE`); they
-write the registration files and then ask the daemon to check. A daemon that is
+The CLI implements `continue on|off` and hook marking locally,
+so it has the caller's environment (session ids, `TMUX_PANE`). It writes the
+registration files and then asks the daemon to check. Paseo also accepts
+explicit agent IDs through `POST /v1/agents/{id}/auto-continue`. A daemon that is
 down finds the registrations when it starts. There is no config-reload
 endpoint: after editing the config, `agent-quotas restart` (launchd kickstart).
 
@@ -337,10 +338,20 @@ per-registration lock.
 Registrations stay in
 `${XDG_STATE_HOME:-~/.local/state}/agent-sessions/auto-continue-paseo/<hash16(home)>-<agent>.json`
 with the same JSON fields (`version`, `enabled`, `home`, `agent_id`,
-`binding`, `poll`, `status`, `registered_at`, `claimed_failure`) and the same
+`binding`, `poll`, `status`, `registered_at`, `claimed_failure`) plus
+`set_by` (`cli`, `api` or `default`). They use the same
 `.lock` files taken with `flock`. Because both the old Python workers and the
 daemon take that lock and record `claimed_failure` before sending, running both
 during the cutover cannot send twice for one failed turn.
+
+`paseo.default_auto_continue` (false by default) uses the periodic Paseo
+listing to enable agents with real activity in the last 24 hours. It skips
+archived, internal and child agents and requires a supported seat. A default
+decision can only be written once. It never overwrites a prior decision,
+including `off` recorded before an agent was ever enabled. New cache-only
+files have `set_by: null` for an undecided auto-continue policy. Older files
+without `set_by` may represent an explicit opt-out, so the default leaves all
+such files alone. Cache policy and auto-continue defaults are independent.
 
 `tick` is ported with every guarantee:
 
@@ -357,7 +368,8 @@ during the cutover cannot send twice for one failed turn.
    day). Digests are byte-compatible with the Python ones, so an existing
    `claimed_failure` stays claimed.
 5. Pending permission, or no failure while not in error: waiting.
-6. Failure already claimed: waiting for a new one.
+6. Failure already claimed: waiting for a new one. A keeper ping that fails
+   on quota is marked handled without a resume.
 7. Quota for that agent's own binding (Claude profile + model family; Codex
    active auth of that `CODEX_HOME`) is read from the daemon store with a
    refresh if the snapshot is older than 60 s (subject to the floor and
@@ -371,6 +383,9 @@ during the cutover cannot send twice for one failed turn.
     with Paseo marker variables removed from the environment.
 11. A failed or timed-out send disables the registration
     (`send uncertain; inspect agent and re-arm explicitly`).
+
+A successfully completed turn needs no cleanup of its registration. The legacy
+Python fallback checks quota failures too, but lacks the keeper-ping filter.
 
 `stopped` and `stopped --usable` (the pickers' listing) are ported too, with
 Antigravity quota read from the store instead of `agy-status`.
@@ -405,7 +420,9 @@ The daemon instead acts on the observed transition:
   `frontmost` 600); an unreadable idle time holds back the targets that need it.
 - Every unreachable or held-back target produces a notification naming it, and
   every delivery appends a line to the log.
-- The text is the old `agent_auto_continue_text` (self-limiting by default).
+- The configurable resume prompt asks for a brief reply if the work is already
+  complete. Native delivery can reach a finished session because the activity
+  gate uses transcript recency as well as any per-session hook mark.
 
 Registration commands (`agent-quotas continue on|off|status|list`) inside a
 Paseo agent (`PASEO_AGENT_ID`) register that agent with the Paseo engine;
@@ -420,9 +437,9 @@ The daemon is the one per-machine process that sends timed prompts to idle
 agents: auto-continue, keepalive pings, and compaction before the prompt cache
 expires. agent-desk shows and toggles the policy through this API and keeps the
 history; it stores no policy of its own. The keeper ships **disabled**
-(`keeper.enabled: false`): the read API answers (the daemon still observes,
-read-only, to serve it), nothing is written or sent, and the acting endpoints
-refuse with `keeper_disabled`.
+(`keeper.enabled: false`): the read API still answers and cache operations refuse with `keeper_disabled`.
+The Paseo auto-continue engine and its registration endpoint are independent
+of the cache keeper switch.
 
 Terms:
 
@@ -494,7 +511,7 @@ GET reports `cache.phase`, derived, never stored:
 One file per agent per machine, the existing Paseo registration file
 (`agent-sessions/auto-continue-paseo/<hash16(home)>-<agent>.json`), gains an
 optional `cache` object. An agent with a cache policy but no auto-continue gets
-a policy-only file with `"enabled": false` (auto-continue off) and its
+a policy-only file with `"enabled": false`, `"set_by": null` and its
 `binding`. `continue on|off` never removes `cache`; `keep set --cache off`
 never touches auto-continue. Every write is under the same `.lock` (flock) as
 auto-continue checks and sends.
@@ -625,8 +642,8 @@ Read (answered with the keeper disabled too, always from memory; see
   `off`), plus, with `all=1`, every agent the last `paseo ls` of that home
   listed; `listed_at` (only with `all=1`) is when that listing ran, absent
   before the first.
-- `GET /v1/agents/{id}[?home=DIR]` → `{schema_version, generated_at, agent:
-  Agent}`. 404 when Paseo does not know the agent.
+- `GET /v1/agents/{id}[?home=DIR]` → `{schema_version, generated_at, agent: Agent}`.
+  Returns 404 when Paseo does not know the agent.
 - **Long-poll:** `GET /v1/agents/{id}?wait_compaction=<compaction id>&timeout=60`
   answers when that compaction is terminal (`completed|failed|canceled`) or on
   timeout (capped at 120 s), with the same document. Polling GET stays the
@@ -635,6 +652,7 @@ Read (answered with the keeper disabled too, always from memory; see
 ```json
 {
   "id": "…", "home": "~/.paseo", "title": "…", "provider": "claude",
+  "keeper_enabled": true, "auto_continue_engine_enabled": true,
   "status": "idle", "pending_permission": false, "archived": false,
   "last_activity_at": 1795032000, "last_activity_source": "transcript",
   "cache_activity_at": 1795032000,
@@ -646,7 +664,7 @@ Read (answered with the keeper disabled too, always from memory; see
   "pings_since_activity": 2,
   "sendable": {"ok": true, "reason": ""},
   "next_action": {"kind": "ping|compact|none", "at": 1795035300, "reason": "…"},
-  "auto_continue": {"enabled": true, "status": "waiting for a quota-failed turn"},
+  "auto_continue": {"enabled": true, "status": "waiting for a quota-failed turn", "set_by": "cli"},
   "lock_path": "…/<hash16>-<agent>.lock",
   "observed_at": 1795035240
 }
@@ -659,7 +677,15 @@ agent known only from a registration or a listing and not observed yet).
 show "idle longer than the TTL and big" from `cache_expires_at < now && big`.
 Times are Unix seconds; unknown values are null.
 
-Act (refused with 503 `keeper_disabled` while disabled):
+Act:
+
+- `POST /v1/agents/{id}/auto-continue[?home=DIR]` `{"enabled": true}` or
+  `{"enabled": false}` records an API decision and returns the same envelope
+  as `GET /v1/agents/{id}`. It preserves cache state and, for a repeated on
+  with the same binding, preserves the claimed turn. Older registrations
+  with no recorded source omit `auto_continue.set_by`.
+
+Cache actions return 503 `keeper_disabled` while the keeper is disabled.
 
 - `POST /v1/agents/{id}/policy` `{"cache": "off|compact|warm", "warm_hours": 6,
   "set_by": "agent|desk|cli"}` (`set_by` defaults to `desk`; `default` is

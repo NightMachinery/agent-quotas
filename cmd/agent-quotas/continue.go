@@ -23,7 +23,10 @@ const continueUsage = `usage: agent-quotas continue on|off|status [PASEO_AGENT_I
 
 Inside a Paseo agent (PASEO_AGENT_ID set) or given an agent UUID, on/off/status
 act on that Paseo agent; otherwise on the native Claude Code, Codex or
-Antigravity session this shell belongs to.`
+Antigravity session this shell belongs to.
+
+Paseo auto-continue resumes a quota-failed work turn once when quota returns.
+Leave it enabled after finishing work. Use off to opt out of future resumes.`
 
 // cmdContinue registers sessions for auto-continue. Registration runs in
 // this process, since it needs the caller's environment; the daemon is then

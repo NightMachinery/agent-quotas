@@ -221,9 +221,10 @@ func (k *Keeper) lockedState(snap *paseo.Object, id, home string, create bool) (
 	}
 	state, err = paseo.ReadObject(path)
 	if err == nil {
-		return path, state, unlock, nil
-	}
-	if !errors.Is(err, os.ErrNotExist) || !create {
+		if b, _ := state.Object("binding"); b != nil || !create {
+			return path, state, unlock, nil
+		}
+	} else if !errors.Is(err, os.ErrNotExist) || !create {
 		unlock()
 		if errors.Is(err, os.ErrNotExist) {
 			err = nil
@@ -235,8 +236,11 @@ func (k *Keeper) lockedState(snap *paseo.Object, id, home string, create bool) (
 		unlock()
 		return "", nil, nil, fmt.Errorf("%w: the keeper supports agents on Claude or Codex seats (%v)", ErrBadRequest, berr)
 	}
-	state = paseo.Obj("version", 1, "enabled", false, "home", home, "agent_id", id,
-		"binding", binding, "poll", 300, "status", paseo.StatusOff, "registered_at", k.nowS())
+	if state == nil {
+		state = paseo.Obj("version", 1, "enabled", false, "home", home, "agent_id", id,
+			"poll", 300, "status", paseo.StatusOff, "registered_at", k.nowS(), "set_by", nil)
+	}
+	state.Set("binding", binding)
 	return path, state, unlock, nil
 }
 
@@ -341,6 +345,37 @@ func (k *Keeper) setPolicy(ctx context.Context, id, home, policy string, warmHou
 	}
 	e, _ := k.cached(o.home, id)
 	return k.viewOf(e), nil
+}
+
+// setAutoContinue applies an API or default decision through the Paseo engine.
+func (k *Keeper) setAutoContinue(ctx context.Context, id, home string, enabled bool, setBy string) (View, error) {
+	id, err := canonical(id)
+	if err != nil {
+		return View{}, err
+	}
+	home = k.Engine.ResolveHome(home)
+	record, err := k.Engine.Stored(id, home)
+	if err != nil {
+		return View{}, ErrUnknownAgent
+	}
+	if record.Value("archivedAt") != nil {
+		return View{}, fmt.Errorf("%w: the agent is archived", ErrBadRequest)
+	}
+	path, err := k.Engine.SetAutoContinue(ctx, id, home, enabled, setBy)
+	if err != nil {
+		return View{}, err
+	}
+	if path != "" {
+		k.noteRegistration(home, id, path)
+		if enabled && k.AutoContinueChanged != nil {
+			k.AutoContinueChanged(path)
+		}
+	}
+	o, err := k.observeStore(ctx, id, home)
+	if err != nil {
+		return View{}, err
+	}
+	return k.viewOf(&entry{o: o, at: k.nowS()}), nil
 }
 
 // Compact queues a manual compaction (or returns the one in flight) and
@@ -511,6 +546,12 @@ func readBody(r *http.Request, v any) error {
 	return daemon.ReadJSON(r, v)
 }
 
+func (k *Keeper) writeAgent(w http.ResponseWriter, v View) {
+	daemon.WriteJSON(w, http.StatusOK, Document{
+		SchemaVersion: model.SchemaVersion, GeneratedAt: k.nowS(), Agent: v,
+	})
+}
+
 // Register adds the keeper's routes.
 func (k *Keeper) Register(m Mux) {
 	m.Handle("GET /v1/agents", func(w http.ResponseWriter, r *http.Request) {
@@ -542,7 +583,26 @@ func (k *Keeper) Register(m Mux) {
 			writeErr(w, err)
 			return
 		}
-		daemon.WriteJSON(w, http.StatusOK, Document{SchemaVersion: model.SchemaVersion, GeneratedAt: k.nowS(), Agent: v})
+		k.writeAgent(w, v)
+	})
+	m.Handle("POST /v1/agents/{id}/auto-continue", func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			Enabled *bool `json:"enabled"`
+		}
+		if err := daemon.ReadJSON(r, &req); err != nil {
+			writeErr(w, err)
+			return
+		}
+		if req.Enabled == nil {
+			writeErr(w, fmt.Errorf("%w: enabled must be a boolean", ErrBadRequest))
+			return
+		}
+		v, err := k.setAutoContinue(r.Context(), r.PathValue("id"), r.URL.Query().Get("home"), *req.Enabled, "api")
+		if err != nil {
+			writeErr(w, err)
+			return
+		}
+		k.writeAgent(w, v)
 	})
 	m.Handle("POST /v1/agents/{id}/policy", func(w http.ResponseWriter, r *http.Request) {
 		var req PolicyRequest
@@ -560,7 +620,7 @@ func (k *Keeper) Register(m Mux) {
 			writeErr(w, err)
 			return
 		}
-		daemon.WriteJSON(w, http.StatusOK, Document{SchemaVersion: model.SchemaVersion, GeneratedAt: k.nowS(), Agent: v})
+		k.writeAgent(w, v)
 	})
 	m.Handle("POST /v1/agents/{id}/standby", func(w http.ResponseWriter, r *http.Request) {
 		var req PolicyRequest
@@ -578,7 +638,7 @@ func (k *Keeper) Register(m Mux) {
 			writeErr(w, err)
 			return
 		}
-		daemon.WriteJSON(w, http.StatusOK, Document{SchemaVersion: model.SchemaVersion, GeneratedAt: k.nowS(), Agent: v})
+		k.writeAgent(w, v)
 	})
 	m.Handle("POST /v1/agents/{id}/compact", func(w http.ResponseWriter, r *http.Request) {
 		res, err := k.Compact(r.Context(), r.PathValue("id"), r.URL.Query().Get("home"))

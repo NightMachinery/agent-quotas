@@ -140,7 +140,7 @@ func attachEngines(ctx context.Context, cfg *config.Config, d *daemon.Daemon, sr
 
 	var ps *paseoScheduler
 	var peng *paseo.Engine
-	if cfg.Paseo.Enabled == nil || *cfg.Paseo.Enabled {
+	if cfg.Paseo.AutoContinueEnabled() {
 		peng = paseo.New(cfg, quotas)
 		ps = newPaseoScheduler(peng, logger)
 		runs = append(runs, ps.run)
@@ -149,7 +149,11 @@ func attachEngines(ctx context.Context, cfg *config.Config, d *daemon.Daemon, sr
 	if ns != nil {
 		runs = append(runs, ns.run)
 	}
-	runs = append(runs, attachKeeper(cfg, d, srv, quotas, logger))
+	runs = append(runs, attachKeeper(cfg, d, srv, quotas, logger, func(path string) {
+		if ps != nil {
+			ps.request(paseoKick{path: path})
+		}
+	}))
 
 	d.Subscribe(func(t model.Transition, _ model.Snapshot) {
 		if t.To != model.Usable {

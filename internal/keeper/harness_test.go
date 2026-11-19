@@ -179,6 +179,7 @@ func newHarness(t *testing.T) *harness {
 	h.eng.UserHome = h.user
 	h.eng.Getenv = func(string) string { return "" }
 	h.paseo = &fakePaseo{inspects: map[string]*paseo.Object{}, logs: map[string][]*paseo.Object{}}
+	h.eng.Paseo = h.paseo
 	h.seats = &fakeSeats{seat: Seat{Account: "claude:default", Verdict: model.Usable}}
 	h.k = New(cfg, h.eng, h.paseo, h.seats, log.New(io.Discard, "", 0))
 	h.k.Now = func() time.Time { return model.Time(h.now) }

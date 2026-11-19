@@ -49,6 +49,13 @@ because it replaces the shell's armed jobs and both would type. Agent hooks
 call `agent-quotas hook claude|codex|agy "$TMUX_PANE"` so a limit is noticed at
 once rather than at the next poll.
 
+With `"paseo": {"default_auto_continue": true}` in the config, the daemon enables
+auto-continue for recently active main agents that have never had a decision.
+This setting ships off. An explicit `continue off` opts the agent out. Leave it
+on after finishing work. The Paseo engine only resumes the agent's own
+quota-failed turn and skips keeper pings. Native terminal resumes use recent
+activity and can occasionally reach a session that already finished.
+
 Keeper (cache policy for idle Paseo agents; ships disabled, turn it on with
 `"keeper": {"enabled": true}` and `agent-quotas restart`):
 
@@ -61,6 +68,24 @@ agent-quotas keep compact --wait         # /compact now, wait for the result
 
 Keepalive pings start with `[agent-quotas keepalive]`, so hooks and logs can
 drop them, and a ping that fails on the quota is never auto-continued.
+
+## Paseo plugin
+
+On the host running agent-quotas, install the plugin from a checkout with
+Paseo 0.15.4 or later. Enable plugins in Paseo first.
+
+```sh
+paseo plugin install /absolute/path/to/agent-quotas/paseo-plugin
+```
+
+Open an agent, then choose **Agent quotas** in the Command Center. The agent
+panel shows the seat verdict, auto-continue status, cache phase and next
+action. It also sets auto-continue and cache policy, puts the agent on
+standby, or requests immediate compaction. Cache controls require the keeper.
+
+The plugin reads the local Unix socket on the Paseo daemon host. For a custom
+Paseo home, set `PASEO_HOME` in that daemon's environment. The socket follows
+`AGENT_QUOTAS_SOCKET`, `AGENT_QUOTAS_STATE_DIR` and `XDG_STATE_HOME`.
 
 ## More
 

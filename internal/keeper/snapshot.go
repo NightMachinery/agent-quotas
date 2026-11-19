@@ -247,8 +247,8 @@ func (k *Keeper) prime(ctx context.Context) {
 // ---- the listing of every agent ----
 
 // RefreshListing runs `paseo ls` for every configured home, observes the
-// agents it lists that have no registration (files only), and then, when
-// the keeper is enabled, applies the default policy. Run calls it at start
+// agents it lists that have no registration (files only), and then
+// applies the configured defaults. Run calls it at start
 // and every five minutes; reads with all=1 serve its last result.
 func (k *Keeper) RefreshListing(ctx context.Context) {
 	for _, h := range k.Config.Paseo.Homes {
@@ -296,9 +296,7 @@ func (k *Keeper) RefreshListing(ctx context.Context) {
 			k.dispatch(ctx, key(home, id), func(ctx context.Context) { _, _ = k.observeStore(ctx, id, home) }, &wg)
 		}
 		wg.Wait()
-		if k.Enabled() {
-			k.applyDefault(ctx, home, list)
-		}
+		k.applyDefault(ctx, home, list)
 	}
 }
 

@@ -9,10 +9,7 @@ import (
 	"github.com/NightMachinery/agent-quotas/internal/procx"
 )
 
-// ContinueText is the message sent to a resumed agent. Only a turn that
-// failed on the limit is resumed, so the run was interrupted: there is no
-// "turn yourself off if finished" clause, which agents read as "off once
-// this batch is done".
+// ContinueText resumes an agent whose last work turn failed on quota.
 const ContinueText = "Continue."
 
 // Paseo is the access to the Paseo daemon the engine needs.

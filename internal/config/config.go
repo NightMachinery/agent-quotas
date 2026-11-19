@@ -87,7 +87,13 @@ type Paseo struct {
 	RegistrationsDir string   `json:"registrations_dir,omitempty"`
 	SendBehavior     string   `json:"send_behavior,omitempty"`
 	Binary           string   `json:"paseo_binary,omitempty"`
+	// DefaultAutoContinue enables auto-continue once for recently active main
+	// agents without a prior decision.
+	DefaultAutoContinue bool `json:"default_auto_continue,omitempty"`
 }
+
+// AutoContinueEnabled reports whether the daemon runs the Paseo engine.
+func (p Paseo) AutoContinueEnabled() bool { return p.Enabled == nil || *p.Enabled }
 
 // Native configures the native auto-continue engine.
 type Native struct {

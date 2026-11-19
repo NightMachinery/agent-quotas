@@ -24,9 +24,8 @@ const (
 // cancelText is how a compaction turn that ended without compacting reads.
 var cancelText = regexp.MustCompile(`(?i)compaction\s+cancel`)
 
-// Run observes, and acts when the keeper is enabled, until ctx ends. It
-// observes even while the keeper is disabled: the read API serves its
-// observations.
+// Run observes agents and applies configured defaults until ctx ends.
+// Cache actions run only when the keeper is enabled.
 func (k *Keeper) Run(ctx context.Context) {
 	k.init()
 	k.prime(ctx)
@@ -491,23 +490,26 @@ func scanTimeline(items []*paseo.Object) (completed, canceled bool) {
 	return completed, canceled
 }
 
-// applyDefault gives the default policy, once, to recently active main
-// agents (not subagents) of a listing whose policy was never decided. It decides from the
-// observations in memory and looks again (files only) before setting.
 // parentLabel is the label Paseo sets on an agent another agent created.
 const parentLabel = "paseo.parent-agent-id"
 
+// applyDefault considers recently active main agents once for each default.
 func (k *Keeper) applyDefault(ctx context.Context, home string, list []*paseo.Object) {
 	policy := k.Config.Keeper.DefaultPolicy
-	if policy == "" || policy == PolicyOff || !k.Enabled() {
+	cacheDefault := policy != "" && policy != PolicyOff && k.Enabled()
+	autoDefault := k.Config.Paseo.DefaultAutoContinue && k.Config.Paseo.AutoContinueEnabled()
+	if !cacheDefault && !autoDefault {
 		return
 	}
-	undecided := func(o *obs) bool {
+	wantsCache := func(o *obs) bool {
+		return cacheDefault && (o.cache == nil || o.cache.SetAt <= 0)
+	}
+	wantsAuto := func(o *obs) bool {
+		return autoDefault && !paseo.ContinueDecided(o.state)
+	}
+	eligible := func(o *obs) bool {
 		if o.record == nil || o.archived() || o.record.Value("internal") == true || o.child() {
-			return false // subagents: their parent decides
-		}
-		if o.cache != nil && o.cache.SetAt > 0 {
-			return false // decided before
+			return false
 		}
 		v := k.view(o)
 		return v.realAt > 0 && k.nowS()-v.realAt <= defaultRecent.Seconds()
@@ -519,15 +521,23 @@ func (k *Keeper) applyDefault(ctx context.Context, home string, list []*paseo.Ob
 			continue
 		}
 		e, ok := k.cached(home, id)
-		if !ok || !undecided(e.o) {
+		if !ok || !(wantsCache(e.o) || wantsAuto(e.o)) || !eligible(e.o) {
 			continue
 		}
-		if o, err := k.observeStore(ctx, id, home); err != nil || !undecided(o) {
+		o, err := k.observeStore(ctx, id, home)
+		if err != nil || !eligible(o) {
 			continue
 		}
-		if _, err := k.setPolicy(ctx, id, home, policy, 0, "default", false); err != nil &&
-			!errors.Is(err, ErrBadRequest) {
-			k.Log.Printf("keeper %s: default policy: %v", id, err)
+		if wantsCache(o) {
+			if _, err := k.setPolicy(ctx, id, home, policy, 0, "default", false); err != nil &&
+				!errors.Is(err, ErrBadRequest) {
+				k.Log.Printf("keeper %s: default policy: %v", id, err)
+			}
+		}
+		if wantsAuto(o) && o.identOK {
+			if _, err := k.setAutoContinue(ctx, id, home, true, "default"); err != nil {
+				k.Log.Printf("paseo %s: default auto-continue: %v", id, err)
+			}
 		}
 	}
 }

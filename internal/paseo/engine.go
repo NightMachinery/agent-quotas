@@ -348,7 +348,7 @@ func (e *Engine) Tick(ctx context.Context, path string) (string, error) {
 				if err != nil {
 					return "", err
 				}
-				changed = again != failure
+				changed = again != failure || e.keeperTurnFailed(state, current, stored)
 			}
 			if changed {
 				setStatus(StatusChanged)
@@ -429,99 +429,137 @@ func (e *Engine) registrationPath(agentID, home string) (string, error) {
 	return filepath.Join(dir, FileName(home, agentID)), nil
 }
 
+// ContinueDecided reports whether the registration has a prior decision.
+func ContinueDecided(state *Object) bool {
+	if state == nil {
+		return false
+	}
+	// Older files did not distinguish an explicit Off from a keeper-only
+	// registration. Treat them as decided so an upgrade cannot undo an opt-out.
+	source, hasSource := state.Get("set_by")
+	return !hasSource || source != nil || truthy(state.Value("enabled"))
+}
+
 // On registers an agent (exact UUID; poll >= 30 s; local daemon only;
 // archived agents refused). Repeating it for an enabled registration with
-// the same binding keeps the claimed failure, so a turn already continued is
-// not continued again. The daemon schedules the ticks; no worker is started.
+// the same binding keeps the claimed failure.
 func (e *Engine) On(ctx context.Context, agentID, home string, poll int) (string, error) {
-	agentID, err := e.validate(agentID, poll)
-	if err != nil {
-		return "", err
-	}
-	home = e.ResolveHome(home)
-	path, err := e.registrationPath(agentID, home)
-	if err != nil {
-		return "", err
-	}
-	snapshot, err := e.Paseo.Inspect(ctx, agentID, home)
-	if err != nil {
-		return "", err
-	}
-	if !equal(snapshot.Value("Id"), agentID) || truthy(snapshot.Value("Archived")) {
-		return "", refuse("Agent is unavailable or archived")
-	}
-	binding, err := e.binding(snapshot, home)
-	if err != nil {
-		return "", err
-	}
-	state := Obj("version", 1, "enabled", true, "home", home, "agent_id", agentID,
-		"binding", binding, "poll", poll, "status", StatusWaitingFailure,
-		"registered_at", float64(e.now().UnixNano())/1e9)
-	if _, err := e.stored(agentID, home); err != nil { // a readable local record first
-		return "", err
-	}
-	unlock, err := lockFile(lockPath(path))
-	if err != nil {
-		return "", err
-	}
-	func() {
-		defer unlock()
-		if _, statErr := os.Stat(path); statErr == nil {
-			var previous *Object
-			previous, err = readObject(path)
-			if err != nil {
-				return
-			}
-			if cache, ok := previous.Get("cache"); ok {
-				state.Set("cache", cache) // the keeper's policy outlives auto-continue
-			}
-			if truthy(previous.Value("enabled")) && equal(previous.Value("binding"), binding) {
-				state.Set("claimed_failure", previous.Value("claimed_failure"))
-				status, has := previous.Get("status")
-				if !has {
-					status = StatusWaitingFailure
-				}
-				state.Set("status", status)
-			}
-		}
-		err = atomicWrite(path, state)
-	}()
-	if err != nil {
-		return "", err
-	}
-	return "auto-continue on: " + pyStr(binding.Value("agent")) + "/" + pyStr(binding.Value("profile")) +
-		", target: paseo:" + agentID + ", poll: " + strconv.Itoa(poll) + "s", nil
+	out, _, err := e.enable(ctx, agentID, home, poll, "cli")
+	return out, err
 }
 
 // Off disables a registration under the tick lock, so no send is in flight
 // when it returns.
-func (e *Engine) Off(ctx context.Context, agentID, home string) (string, error) {
-	agentID, err := e.validate(agentID, 300)
-	if err != nil {
-		return "", err
+func (e *Engine) Off(_ context.Context, agentID, home string) (string, error) {
+	out, _, err := e.disable(agentID, home, "cli")
+	return out, err
+}
+
+// SetAutoContinue uses the CLI registration path for an API or default
+// decision. It returns the changed file, or "" if no decision was recorded.
+func (e *Engine) SetAutoContinue(ctx context.Context, agentID, home string, enabled bool, setBy string) (string, error) {
+	if enabled {
+		_, path, err := e.enable(ctx, agentID, home, 300, setBy)
+		return path, err
 	}
-	path, err := e.registrationPath(agentID, e.ResolveHome(home))
+	_, path, err := e.disable(agentID, home, setBy)
+	return path, err
+}
+
+func (e *Engine) enable(ctx context.Context, agentID, home string, poll int, setBy string) (string, string, error) {
+	agentID, err := e.validate(agentID, poll)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
-	if _, err := os.Stat(path); err != nil {
-		return "auto-continue was not on for this Paseo agent", nil
+	home = e.ResolveHome(home)
+	path, err := e.registrationPath(agentID, home)
+	if err != nil {
+		return "", "", err
+	}
+	snapshot, err := e.Paseo.Inspect(ctx, agentID, home)
+	if err != nil {
+		return "", "", err
+	}
+	if !equal(snapshot.Value("Id"), agentID) || truthy(snapshot.Value("Archived")) {
+		return "", "", refuse("Agent is unavailable or archived")
+	}
+	binding, err := e.binding(snapshot, home)
+	if err != nil {
+		return "", "", err
+	}
+	if _, err := e.stored(agentID, home); err != nil { // a readable local record first
+		return "", "", err
 	}
 	unlock, err := lockFile(lockPath(path))
 	if err != nil {
-		return "", err
+		return "", "", err
+	}
+	defer unlock()
+	previous, err := readObject(path)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return "", "", err
+	}
+	if setBy == "default" && ContinueDecided(previous) {
+		return "", "", nil // An explicit decision may have arrived since the listing.
+	}
+	if setBy != "cli" {
+		if n, ok := numberOf(previous.Value("poll")); ok && n >= 30 {
+			poll = int(n)
+		}
+	}
+	state := Obj("version", 1, "enabled", true, "home", home, "agent_id", agentID,
+		"binding", binding, "poll", poll, "status", StatusWaitingFailure,
+		"registered_at", float64(e.now().UnixNano())/1e9, "set_by", setBy)
+	if cache, ok := previous.Get("cache"); ok {
+		state.Set("cache", cache)
+	}
+	if truthy(previous.Value("enabled")) && equal(previous.Value("binding"), binding) {
+		state.Set("claimed_failure", previous.Value("claimed_failure"))
+		if status, ok := previous.Get("status"); ok {
+			state.Set("status", status)
+		}
+	}
+	if err := atomicWrite(path, state); err != nil {
+		return "", "", err
+	}
+	out := "auto-continue on: " + pyStr(binding.Value("agent")) + "/" + pyStr(binding.Value("profile")) +
+		", target: paseo:" + agentID + ", poll: " + strconv.Itoa(poll) + "s"
+	return out, path, nil
+}
+
+func (e *Engine) disable(agentID, home, setBy string) (string, string, error) {
+	agentID, err := e.validate(agentID, 300)
+	if err != nil {
+		return "", "", err
+	}
+	home = e.ResolveHome(home)
+	path, err := e.registrationPath(agentID, home)
+	if err != nil {
+		return "", "", err
+	}
+	unlock, err := lockFile(lockPath(path))
+	if err != nil {
+		return "", "", err
 	}
 	defer unlock()
 	state, err := readObject(path)
-	if err != nil {
-		return "", err
+	if errors.Is(err, os.ErrNotExist) {
+		record, err := e.stored(agentID, home)
+		if err != nil || !equal(record.Value("id"), agentID) {
+			return "auto-continue was not on for this Paseo agent", "", nil
+		}
+		state = Obj("version", 1, "home", home, "agent_id", agentID, "poll", 300,
+			"registered_at", float64(e.now().UnixNano())/1e9)
+	} else if err != nil {
+		return "", "", err
 	}
 	state.Set("enabled", false)
 	state.Set("status", StatusOff)
+	state.Set("set_by", setBy)
 	if err := atomicWrite(path, state); err != nil {
-		return "", err
+		return "", "", err
 	}
-	return "auto-continue off for paseo:" + agentID, nil
+	return "auto-continue off for paseo:" + agentID, path, nil
 }
 
 // Status describes one registration in the old tool's words; the watcher
@@ -543,6 +581,9 @@ func (e *Engine) Status(ctx context.Context, agentID, home string) (string, erro
 		return "", err
 	}
 	binding, _ := state.Object("binding")
+	if binding == nil && !truthy(state.Value("enabled")) {
+		return "this Paseo agent: off", nil
+	}
 	onOff := "off"
 	if truthy(state.Value("enabled")) {
 		onOff = "on"
@@ -566,6 +607,7 @@ type Registration struct {
 	Status     string `json:"status"`
 	Agent      string `json:"agent"`   // binding: claude or codex
 	Profile    string `json:"profile"` // binding: Claude profile, or "codex"
+	SetBy      string `json:"set_by,omitempty"`
 	NativeHome string `json:"native_home"`
 	Provider   string `json:"provider"`
 }
@@ -589,6 +631,7 @@ func (e *Engine) Registrations() ([]Registration, error) {
 		r.AgentID, _ = state.String("agent_id")
 		r.Home, _ = state.String("home")
 		r.Status, _ = state.String("status")
+		r.SetBy, _ = state.String("set_by")
 		r.Agent, _ = binding.String("agent")
 		r.Profile, _ = binding.String("profile")
 		r.NativeHome, _ = binding.String("native_home")
