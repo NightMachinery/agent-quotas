@@ -331,8 +331,10 @@ which take the same lock and record the same claim) and `native.enabled`
 - a safety tick per registration (its `poll`, default 300 s, minimum 30 s);
 - an explicit check or a hook kick.
 
-A check never blocks a poller: checks run on a separate worker with a
-per-registration lock.
+A check never blocks a quota poller. Paseo checks run independently, with
+one check in flight per registration and the per-registration lock. All Paseo
+CLI calls in the daemon, including keeper and HTTP calls, share a limit of
+two running commands per resolved Paseo home.
 
 ### Paseo engine (port of `paseo_auto_continue.py`)
 
@@ -354,7 +356,22 @@ files have `set_by: null` for an undecided auto-continue policy. Older files
 without `set_by` may represent an explicit opt-out, so the default leaves all
 such files alone. Cache policy and auto-continue defaults are independent.
 
-`tick` is ported with every guarantee:
+Scheduled checks read the exact agent's persisted JSON first and retry a
+decode error once. A known running agent or a known state with no new quota
+failure needs no CLI call. When a record cannot provide a status, a round
+lazily shares one `paseo ls -g --json` per home to identify agents still
+running. An absent row is inconclusive because global listings omit
+archived and background agents. An apparent binding change, archival, or
+new quota failure goes through the live check before changing the
+registration or sending.
+
+A timed-out check is retried after 20 s, then 40 s, doubling up to its normal
+poll interval. The scheduler checks retry deadlines every five seconds.
+It logs the first timeout in a streak. The same backoff applies when
+Paseo cannot be started. The send path keeps its separate handling for
+uncertain outcomes.
+
+The live check retains the following guarantees:
 
 1. Disabled registration: nothing.
 2. Agent gone or archived: disable (`agent unavailable`).
@@ -561,24 +578,28 @@ and `due` is before `warm_until`, else `compact`:
 - A real turn starts a new idle stretch: `warm_until`, "compacted in this
   stretch" and `pings_since_activity` all follow it.
 
-An action fires only if the agent is sendable when it is due, rechecked after
-taking the lock (inspect again, under the lock). Not sendable: retried at the
-next observation, never queued behind a running turn. A missed window (now is
-at or after the cache expiry, for instance because the machine slept) is
-skipped, not caught up: pinging a cold cache pays the full price and keeps
-nothing.
+The keeper observes each registered agent every 60 s from its Paseo record,
+transcript and the quota store. A due action that passes the file checks also
+needs a live `paseo inspect` under the registration lock. The keeper
+recomputes the action and every send gate under the lock. A busy agent is
+observed again at the next scheduled check. Once the cache expires, the
+keeper skips that ping.
 
-The daemon observes every agent with a file every 60 s from Paseo's stored
-record, the transcript and the store (file reads only), and, while enabled,
-runs `paseo inspect` only when an action is due (and again under the lock),
-follows compactions in flight every 10 s (`paseo inspect` and `paseo logs`),
-and applies the default policy after each global agent list (`paseo ls`,
-at start and every 5 minutes). Each agent's observation runs on a pool of 8
-workers, at most one piece of work per agent at a time, with its external
-commands bounded to 30 s (`paseo ls` to 60 s); a round does not wait for a slow
-agent, so a hung transcript or `paseo inspect` delays only that agent. A send
-is not cut short by these bounds (only by the CLI's own 60 s timeout), since a
-killed send has an uncertain outcome.
+Compactions in flight are followed every 10 s. A record showing a running
+turn postpones the CLI check until its status changes or the compaction
+timeout expires. When multiple compactions for a home need checking, they
+share one global listing for live status. Agents absent from that list may
+need an individual inspect. An idle or closed agent's timeline still comes
+from `paseo logs`. The keeper refreshes its agent directory and applies
+configured defaults on startup and every five minutes, with one listing per
+home.
+
+Keeper observations run independently on a pool of eight workers. CLI
+observation calls have a 30 s deadline, with 60 s for a listing. Timeout
+streaks are logged once per agent check or per home listing. A retry starts
+at 20 s and doubles up to the usual interval, which remains 10 s for
+in-flight compactions. A send retains the CLI's 60 s timeout and the
+handling for uncertain delivery.
 
 ### Sending and the marker
 

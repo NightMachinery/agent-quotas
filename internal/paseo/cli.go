@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"sync"
 	"time"
 
 	"github.com/NightMachinery/agent-quotas/internal/procx"
@@ -38,7 +39,74 @@ var (
 	ErrCommandFailed      = refuse("External command failed; its private output was withheld")
 )
 
-func (c CLI) run(ctx context.Context, argv []string) ([]byte, error) {
+// Check failures can share a retry policy across callers. Send errors still
+// follow each caller's existing uncertain-send handling.
+type CheckRetry struct {
+	delay time.Duration
+	At    time.Time
+}
+
+// Failed schedules the next check and reports whether this starts a streak.
+func (r *CheckRetry) Failed(now time.Time, interval time.Duration) bool {
+	first := r.delay == 0
+	if first {
+		r.delay = min(20*time.Second, interval)
+	} else {
+		r.delay = min(2*r.delay, interval)
+	}
+	r.At = now.Add(r.delay)
+	return first
+}
+
+type homeCommands struct {
+	slots chan struct{}
+	users int
+}
+
+var commandHomes = struct {
+	sync.Mutex
+	homes map[string]*homeCommands
+}{homes: make(map[string]*homeCommands)}
+
+// All CLI callers in this process share the same limits, including the
+// keeper, HTTP handlers, and the auto-continue engine.
+func commandSlot(ctx context.Context, home string) (func(), error) {
+	home = realpath(home)
+	commandHomes.Lock()
+	gate := commandHomes.homes[home]
+	if gate == nil {
+		gate = &homeCommands{slots: make(chan struct{}, 2)}
+		commandHomes.homes[home] = gate
+	}
+	gate.users++
+	commandHomes.Unlock()
+
+	done := func() {
+		commandHomes.Lock()
+		gate.users--
+		if gate.users == 0 {
+			delete(commandHomes.homes, home)
+		}
+		commandHomes.Unlock()
+	}
+	select {
+	case gate.slots <- struct{}{}:
+		return func() { <-gate.slots; done() }, nil
+	case <-ctx.Done():
+		done()
+		return nil, ErrCommandUnavailable
+	}
+}
+
+func (c CLI) run(ctx context.Context, home string, argv []string) ([]byte, error) {
+	release, err := commandSlot(ctx, home)
+	if err != nil {
+		return nil, err
+	}
+	defer release()
+	if ctx.Err() != nil {
+		return nil, ErrCommandUnavailable
+	}
 	runner := c.Runner
 	if runner == nil {
 		runner = procx.Exec{}
@@ -71,7 +139,7 @@ func (c CLI) run(ctx context.Context, argv []string) ([]byte, error) {
 
 // Inspect implements Paseo.
 func (c CLI) Inspect(ctx context.Context, agentID, home string) (*Object, error) {
-	out, err := c.run(ctx, []string{"inspect", agentID, "--home", home, "--json"})
+	out, err := c.run(ctx, home, []string{"inspect", agentID, "--home", home, "--json"})
 	if err != nil {
 		return nil, err
 	}
@@ -84,7 +152,7 @@ func (c CLI) Inspect(ctx context.Context, agentID, home string) (*Object, error)
 
 // Send implements Paseo.
 func (c CLI) Send(ctx context.Context, agentID, home, text, behavior string) error {
-	_, err := c.run(ctx, SendArgv(agentID, home, text, behavior))
+	_, err := c.run(ctx, home, SendArgv(agentID, home, text, behavior))
 	return err
 }
 
@@ -114,7 +182,7 @@ func SendBehavior(configured string, getenv func(string) string) string {
 // Logs is `paseo logs <id> --json --since <RFC 3339> --home <home>`: the
 // timeline items since that time.
 func (c CLI) Logs(ctx context.Context, agentID, home string, since time.Time) ([]*Object, error) {
-	out, err := c.run(ctx, []string{"logs", agentID, "--json", "--since", since.UTC().Format(time.RFC3339Nano), "--home", home})
+	out, err := c.run(ctx, home, []string{"logs", agentID, "--json", "--since", since.UTC().Format(time.RFC3339Nano), "--home", home})
 	if err != nil {
 		return nil, err
 	}
@@ -135,7 +203,7 @@ func (c CLI) Logs(ctx context.Context, agentID, home string, since time.Time) ([
 // List is `paseo ls -g --json --home <home>`: the non-archived agents of
 // every directory.
 func (c CLI) List(ctx context.Context, home string) ([]*Object, error) {
-	out, err := c.run(ctx, []string{"ls", "-g", "--json", "--home", home})
+	out, err := c.run(ctx, home, []string{"ls", "-g", "--json", "--home", home})
 	if err != nil {
 		return nil, err
 	}
@@ -143,7 +211,10 @@ func (c CLI) List(ctx context.Context, home string) ([]*Object, error) {
 	if err != nil {
 		return nil, refuse("paseo ls returned unexpected JSON")
 	}
-	list, _ := v.([]any)
+	list, ok := v.([]any)
+	if !ok {
+		return nil, refuse("paseo ls returned unexpected JSON")
+	}
 	var res []*Object
 	for _, it := range list {
 		if obj, ok := it.(*Object); ok {

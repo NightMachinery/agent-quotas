@@ -27,20 +27,18 @@ var cancelText = regexp.MustCompile(`(?i)compaction\s+cancel`)
 // Run observes agents and applies configured defaults until ctx ends.
 // Cache actions run only when the keeper is enabled.
 func (k *Keeper) Run(ctx context.Context) {
+	k.mu.Lock()
 	k.init()
+	k.mu.Unlock()
 	k.prime(ctx)
-	go func() {
-		ticker := time.NewTicker(defaultEvery)
-		defer ticker.Stop()
-		for {
-			k.RefreshListing(ctx)
-			select {
-			case <-ctx.Done():
-				return
-			case <-ticker.C:
-			}
+	seen := map[string]bool{}
+	for _, h := range k.Config.Paseo.Homes {
+		home := k.Engine.ResolveHome(h)
+		if !seen[home] {
+			seen[home] = true
+			go k.runListing(ctx, home)
 		}
-	}()
+	}
 	ticker := time.NewTicker(tickEvery)
 	defer ticker.Stop()
 	var lastFull time.Time
@@ -108,6 +106,11 @@ func (k *Keeper) round(ctx context.Context, full, wait, all bool) {
 	}
 	enabled := k.Enabled()
 	seen := map[string]string{}
+	type progressCheck struct {
+		path, home, agentKey string
+	}
+	var progress []progressCheck
+	progressByHome := map[string]int{}
 	for _, r := range regs {
 		if ctx.Err() != nil {
 			return
@@ -118,22 +121,40 @@ func (k *Keeper) round(ctx context.Context, full, wait, all bool) {
 		path, id, home := r.Path, r.AgentID, k.Engine.ResolveHome(r.Home)
 		agentKey := key(home, id)
 		seen[agentKey] = path
-		step := false
+		step, sent := false, false
 		if enabled {
 			if state, err := paseo.ReadObject(path); err == nil {
 				if c, err := readCache(state); err == nil && c != nil {
 					on := c.Policy != PolicyOff && c.Policy != ""
-					step = c.Compaction.inFlight() || full && (on || needsTokensAfter(c))
+					retry := k.retryAt(path)
+					due := !k.now().Before(retry)
+					step = due && (c.Compaction.inFlight() || full && (on || needsTokensAfter(c)) || !retry.IsZero())
+					sent = c.Compaction != nil && c.Compaction.State == StateSent
 				}
 			}
 		}
 		_, have := k.cached(home, id)
 		switch {
+		case step && sent:
+			progress = append(progress, progressCheck{path: path, home: home, agentKey: agentKey})
+			progressByHome[home]++
 		case step:
 			k.dispatch(ctx, agentKey, func(ctx context.Context) { k.Step(ctx, path) }, wg)
 		case full || all || !have:
 			k.dispatch(ctx, agentKey, func(ctx context.Context) { _, _ = k.observeStore(ctx, id, home) }, wg)
 		}
+	}
+	batches := map[string]*paseo.PollListing{}
+	for _, check := range progress {
+		var batch *paseo.PollListing
+		if progressByHome[check.home] > 1 {
+			batch = batches[check.home]
+			if batch == nil {
+				batch = &paseo.PollListing{}
+				batches[check.home] = batch
+			}
+		}
+		k.dispatch(ctx, check.agentKey, func(ctx context.Context) { k.stepWithRetry(ctx, check.path, batch) }, wg)
 	}
 	// Agents whose registration is gone stay readable while Paseo lists
 	// them (looked at again without the file); the others are dropped.
@@ -166,58 +187,80 @@ func needsTokensAfter(c *Cache) bool {
 
 // Step observes one registration and acts if an action is due.
 func (k *Keeper) Step(ctx context.Context, path string) {
-	if !k.Enabled() {
+	k.stepWithRetry(ctx, path, nil)
+}
+
+func (k *Keeper) stepWithRetry(ctx context.Context, path string, batch *paseo.PollListing) {
+	if !k.Enabled() || k.now().Before(k.retryAt(path)) {
 		return
 	}
+	retry, err := k.step(ctx, path, batch)
+	if ctx.Err() != nil {
+		return
+	}
+	k.mu.Lock()
+	k.init()
+	var first bool
+	if errors.Is(err, paseo.ErrCommandUnavailable) {
+		r := k.retries[path]
+		first = r.Failed(k.now(), retry)
+		k.retries[path] = r
+	} else {
+		delete(k.retries, path)
+	}
+	k.mu.Unlock()
+	if first {
+		k.Log.Printf("keeper %s: check unavailable (%v)", agentOf(path), err)
+	} else if err != nil && !errors.Is(err, paseo.ErrCommandUnavailable) {
+		k.note(path, "check failed: "+err.Error())
+	}
+}
+
+func (k *Keeper) retryAt(path string) time.Time {
+	k.mu.Lock()
+	defer k.mu.Unlock()
+	return k.retries[path].At
+}
+
+// step returns the normal interval of the operation that failed.
+func (k *Keeper) step(ctx context.Context, path string, batch *paseo.PollListing) (time.Duration, error) {
 	state, err := paseo.ReadObject(path)
 	if err != nil {
-		return
+		return 0, nil
 	}
 	agentID, _ := state.String("agent_id")
 	home, _ := state.String("home")
 	o, err := k.observe(ctx, agentID, home, false)
 	if err != nil {
-		return
+		return 0, nil
 	}
 	k.store(o)
 	if o.cache == nil {
-		return
+		return 0, nil
 	}
 	k.bookkeep(o)
 	if c := o.cache.Compaction; c != nil && c.State == StateQueued && o.archived() {
 		k.finish(o.path, c.ID, StateFailed, "archived")
-		return
+		return 0, nil
 	}
 	if c := o.cache.Compaction; c != nil && c.State == StateSent {
-		k.progress(ctx, o)
-		return
+		return tickEvery, k.progress(ctx, o, batch)
 	}
 	v := k.view(o)
 	now := k.nowS()
 	if v.NextAction.Kind == ActNone || *v.NextAction.At > now {
 		k.note(o.path, "next: "+v.NextAction.Kind+" ("+v.NextAction.Reason+")")
-		return
+		return 0, nil
 	}
-	// Due: look again with paseo inspect.
-	if o, err = k.observe(ctx, agentID, home, true); err != nil {
-		k.note(path, "inspect failed: "+err.Error())
-		return
-	}
-	k.store(o)
-	v = k.view(o)
-	if v.NextAction.Kind == ActNone || *v.NextAction.At > now {
-		return
-	}
-	if !v.Sendable.OK {
-		if c := o.cache.Compaction; c != nil && c.State == StateQueued &&
-			now-c.RequestedAt > float64(k.Config.Keeper.CompactionTimeoutSeconds) {
-			k.finish(o.path, c.ID, StateFailed, "not idle")
-			return
-		}
+	// File state can rule out a send. Unknown state and an expired manual
+	// request still get a live check. Plausible actions recheck under the lock.
+	expired := o.cache.Compaction != nil && o.cache.Compaction.State == StateQueued &&
+		now-o.cache.Compaction.RequestedAt > float64(k.Config.Keeper.CompactionTimeoutSeconds)
+	if !v.Sendable.OK && o.status() != "" && !expired {
 		k.note(path, v.NextAction.Kind+" due, not sendable: "+v.Sendable.Reason)
-		return
+		return 0, nil
 	}
-	k.act(ctx, o, v.NextAction)
+	return observeEvery, k.act(ctx, o, v.NextAction)
 }
 
 // note logs a line when an agent's situation changes.
@@ -251,7 +294,7 @@ func (k *Keeper) bookkeep(o *obs) {
 	if !grow && !after {
 		return
 	}
-	_ = k.update(o.path, false, func(_ *paseo.Object, c *Cache) bool {
+	_ = k.tryUpdate(o.path, func(_ *paseo.Object, c *Cache) bool {
 		changed := false
 		if v.realAt > c.ActivityAt+0.001 {
 			c.ActivityAt, changed = v.realAt, true
@@ -264,28 +307,17 @@ func (k *Keeper) bookkeep(o *obs) {
 	})
 }
 
-// update rewrites a registration's cache object under its lock. With wait,
-// it waits for the lock; otherwise a held lock skips the update.
-func (k *Keeper) update(path string, wait bool, fn func(state *paseo.Object, c *Cache) bool) error {
-	var unlock func()
-	if wait {
-		u, err := paseo.LockFile(paseo.LockPath(path))
-		if err != nil {
-			return err
-		}
-		unlock = u
-	} else {
-		u, ok, err := paseo.TryLockFile(paseo.LockPath(path))
-		if err != nil || !ok {
-			return err
-		}
-		unlock = u
+// tryUpdate rewrites the cache when no other sender holds the lock.
+func (k *Keeper) tryUpdate(path string, fn func(state *paseo.Object, c *Cache) bool) error {
+	unlock, ok, err := paseo.TryLockFile(paseo.LockPath(path))
+	if err != nil || !ok {
+		return err
 	}
 	defer unlock()
 	return k.rewrite(path, fn)
 }
 
-// rewrite is update's body, for callers that hold the lock.
+// rewrite updates a registration's cache under a lock held by the caller.
 func (k *Keeper) rewrite(path string, fn func(state *paseo.Object, c *Cache) bool) error {
 	state, err := paseo.ReadObject(path)
 	if err != nil {
@@ -314,7 +346,17 @@ func (k *Keeper) rewrite(path string, fn func(state *paseo.Object, c *Cache) boo
 
 // finish ends compaction id with a terminal state.
 func (k *Keeper) finish(path, id, state, why string) {
-	err := k.update(path, true, func(_ *paseo.Object, c *Cache) bool {
+	unlock, err := paseo.LockFile(paseo.LockPath(path))
+	if err != nil {
+		k.Log.Printf("keeper %s: recording compaction %s %s: %v", agentOf(path), id, state, err)
+		return
+	}
+	defer unlock()
+	k.finishLocked(path, id, state, why)
+}
+
+func (k *Keeper) finishLocked(path, id, state, why string) {
+	err := k.rewrite(path, func(_ *paseo.Object, c *Cache) bool {
 		comp := c.Compaction
 		if comp == nil || comp.ID != id || comp.Terminal() {
 			return false
@@ -334,11 +376,11 @@ func (k *Keeper) finish(path, id, state, why string) {
 }
 
 // act sends one ping or /compact, rechecking everything under the lock.
-func (k *Keeper) act(ctx context.Context, o *obs, a Action) {
+func (k *Keeper) act(ctx context.Context, o *obs, a Action) error {
 	unlock, ok, err := paseo.TryLockFile(paseo.LockPath(o.path))
 	if err != nil {
 		k.note(o.path, "lock: "+err.Error())
-		return
+		return nil
 	}
 	if !ok {
 		k.mu.Lock()
@@ -346,22 +388,32 @@ func (k *Keeper) act(ctx context.Context, o *obs, a Action) {
 		k.busy[o.path] = k.now()
 		k.mu.Unlock()
 		k.note(o.path, a.Kind+" due; lock held by another sender, staying quiet")
-		return
+		return nil
 	}
 	defer unlock()
 	fresh, err := k.observe(ctx, o.agentID, o.home, true)
 	if err != nil {
-		return
+		return err
 	}
 	k.store(fresh)
 	if fresh.cache == nil {
-		return
+		return nil
+	}
+	if fresh.record == nil {
+		return errors.New("persisted Paseo agent unavailable")
+	}
+	if id, _ := fresh.inspect.String("Id"); id != o.agentID {
+		return ErrUnknownAgent
 	}
 	v := k.view(fresh)
 	now := k.nowS()
 	if v.NextAction.Kind != a.Kind || v.NextAction.At == nil || *v.NextAction.At > now || !v.Sendable.OK {
+		if c := fresh.cache.Compaction; !v.Sendable.OK && c != nil && c.State == StateQueued &&
+			now-c.RequestedAt > float64(k.Config.Keeper.CompactionTimeoutSeconds) {
+			k.finishLocked(o.path, c.ID, StateFailed, "not idle")
+		}
 		k.note(o.path, a.Kind+" skipped on recheck: "+v.NextAction.Reason+" "+v.Sendable.Reason)
-		return
+		return nil
 	}
 	behavior := k.Config.Keeper.SendBehavior
 	switch a.Kind {
@@ -370,7 +422,7 @@ func (k *Keeper) act(ctx context.Context, o *obs, a Action) {
 			c.LastPing = &Ping{At: now, Error: "sending"}
 			return true
 		}); err != nil {
-			return
+			return nil
 		}
 		sendErr := k.Paseo.Send(ctx, o.agentID, o.home, k.PingText(), behavior)
 		_ = k.rewrite(o.path, func(_ *paseo.Object, c *Cache) bool {
@@ -411,7 +463,7 @@ func (k *Keeper) act(ctx context.Context, o *obs, a Action) {
 			id = comp.ID
 			return true
 		}); err != nil {
-			return
+			return nil
 		}
 		sendErr := k.Paseo.Send(ctx, o.agentID, o.home, paseo.CompactText, behavior)
 		if sendErr != nil {
@@ -423,50 +475,70 @@ func (k *Keeper) act(ctx context.Context, o *obs, a Action) {
 				return true
 			})
 			k.note(o.path, "compaction "+id+" failed: "+sendErr.Error())
-			return
+			return nil
 		}
 		k.note(o.path, "compaction "+id+" sent")
 	}
+	return nil
 }
 
 // progress follows a sent compaction to its end.
-func (k *Keeper) progress(ctx context.Context, o *obs) {
+func (k *Keeper) progress(ctx context.Context, o *obs, batch *paseo.PollListing) error {
 	comp := o.cache.Compaction
 	now := k.nowS()
-	timeout := float64(k.Config.Keeper.CompactionTimeoutSeconds)
-	fresh, err := k.observe(ctx, o.agentID, o.home, true)
-	if err == nil {
-		o = fresh
-		k.store(o)
-	}
+	expired := now-comp.SentAt > float64(k.Config.Keeper.CompactionTimeoutSeconds)
 	if o.archived() {
 		k.finish(o.path, comp.ID, StateFailed, "archived")
-		return
+		return nil
 	}
-	if err == nil {
-		status := o.status()
-		idle := status == "idle" || status == "closed"
-		lctx, cancel := context.WithTimeout(ctx, observeTimeout)
-		items, lerr := k.Paseo.Logs(lctx, o.agentID, o.home, model.Time(comp.SentAt-2))
+	if (o.status() == "running" || o.status() == "initializing") && !expired {
+		return nil
+	}
+
+	var status string
+	var err error
+	if batch != nil {
+		lctx, cancel := context.WithTimeout(ctx, 2*observeTimeout)
+		status, err = batch.Status(lctx, k.Paseo, o.home, o.agentID)
 		cancel()
-		if lerr == nil {
+	}
+	if status == "" && !errors.Is(err, paseo.ErrCommandUnavailable) {
+		fresh, inspectErr := k.observe(ctx, o.agentID, o.home, true)
+		err = inspectErr
+		if err == nil {
+			k.store(fresh)
+			if fresh.archived() {
+				k.finish(o.path, comp.ID, StateFailed, "archived")
+				return nil
+			}
+			status = fresh.status()
+		}
+	}
+	if status == "idle" || status == "closed" {
+		lctx, cancel := context.WithTimeout(ctx, observeTimeout)
+		items, logErr := k.Paseo.Logs(lctx, o.agentID, o.home, model.Time(comp.SentAt-2))
+		cancel()
+		err = logErr
+		if err == nil {
 			completed, canceled := scanTimeline(items)
 			switch {
-			case completed && idle:
+			case completed:
 				k.finish(o.path, comp.ID, StateCompleted, "")
-				return
-			case canceled && idle:
+				return nil
+			case canceled:
 				k.finish(o.path, comp.ID, StateCanceled, "Compaction canceled.")
-				return
-			case idle && len(items) > 0 && now-comp.SentAt >= cancelGraceSecs:
+				return nil
+			case len(items) > 0 && now-comp.SentAt >= cancelGraceSecs:
 				k.finish(o.path, comp.ID, StateCanceled, "the compaction turn ended without completing")
-				return
+				return nil
 			}
 		}
 	}
-	if now-comp.SentAt > timeout {
+	if expired {
 		k.finish(o.path, comp.ID, StateFailed, "timeout")
+		return nil
 	}
+	return err
 }
 
 // scanTimeline looks for a completed compaction, or a cancellation, in

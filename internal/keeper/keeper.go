@@ -168,7 +168,8 @@ type Keeper struct {
 	mu       sync.Mutex
 	changed  chan struct{}
 	busy     map[string]time.Time // registration path -> lock found held
-	lastSeen map[string]string    // registration path -> last logged state
+	retries  map[string]paseo.CheckRetry
+	lastSeen map[string]string // registration path -> last logged state
 	kick     chan string
 
 	memOnce sync.Once
@@ -188,6 +189,7 @@ func (k *Keeper) init() {
 		k.changed = make(chan struct{})
 		k.busy = map[string]time.Time{}
 		k.lastSeen = map[string]string{}
+		k.retries = map[string]paseo.CheckRetry{}
 		k.kick = make(chan string, 16)
 	}
 }
@@ -350,7 +352,6 @@ func (k *Keeper) observeWith(ctx context.Context, agentID, home string, inspect 
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return nil, err
 	}
-	o.record, _ = k.Engine.Stored(agentID, o.home)
 	switch {
 	case given != nil:
 		o.inspect = given
@@ -362,6 +363,7 @@ func (k *Keeper) observeWith(ctx context.Context, agentID, home string, inspect 
 			return nil, err
 		}
 	}
+	o.record, _ = k.Engine.Stored(agentID, o.home)
 	if o.record == nil && o.inspect == nil && !o.exists {
 		return nil, ErrUnknownAgent
 	}
@@ -406,8 +408,7 @@ func (o *obs) status() string {
 		s, _ := o.inspect.String("Status")
 		return s
 	}
-	s, _ := o.record.String("lastStatus")
-	return s
+	return paseo.StoredStatus(o.record)
 }
 
 func (o *obs) archived() bool {

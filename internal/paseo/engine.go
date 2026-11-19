@@ -17,6 +17,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 	"unicode"
 
@@ -163,7 +164,7 @@ func storedAgent(agentID, home string) (*Object, error) {
 	if len(matches) != 1 {
 		return nil, refuse("Cannot find one local persisted Paseo agent")
 	}
-	record, err := readObject(matches[0])
+	record, err := readAgentRecord(matches[0], os.ReadFile)
 	if err != nil {
 		return nil, err
 	}
@@ -171,6 +172,124 @@ func storedAgent(agentID, home string) (*Object, error) {
 		return nil, refuse("Stored agent ID does not match")
 	}
 	return record, nil
+}
+
+// readAgentRecord retries decoding once if Paseo was in the middle of a write.
+func readAgentRecord(path string, read func(string) ([]byte, error)) (*Object, error) {
+	for attempt := 0; ; attempt++ {
+		data, err := read(path)
+		if err != nil {
+			return nil, err
+		}
+		record, err := DecodeObject(data)
+		if err == nil || attempt == 1 {
+			return record, err
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+// StoredStatus is the lifecycle status in a persisted Paseo agent record.
+func StoredStatus(record *Object) string {
+	status, _ := record.String("lastStatus")
+	switch status {
+	case "idle", "closed", "error", "running", "initializing":
+		return status
+	default:
+		return ""
+	}
+}
+
+// busyStatus recognizes live or persisted states in which no resume is due.
+func busyStatus(status string) bool {
+	return status == "running" || status == "initializing"
+}
+
+// PollListing groups read-only fallback queries for a scheduler round.
+// It is lazy so a round answered entirely by files never starts the CLI.
+type PollListing struct {
+	once sync.Once
+	byID map[string]string
+	err  error
+}
+
+type agentLister interface {
+	List(context.Context, string) ([]*Object, error)
+}
+
+// Status returns the live status of an exact ID in the round's listing.
+// A missing row is inconclusive because the listing omits archived and
+// background agents.
+func (b *PollListing) Status(ctx context.Context, cli agentLister, home, agentID string) (string, error) {
+	b.once.Do(func() {
+		items, err := cli.List(ctx, home)
+		b.err = err
+		b.byID = make(map[string]string, len(items))
+		for _, item := range items {
+			id, _ := item.String("id")
+			status, _ := item.String("status")
+			b.byID[id] = status
+		}
+	})
+	return b.byID[agentID], b.err
+}
+
+// pollStatus skips routine live checks when the file establishes there is
+// no new failed turn. Archival and binding changes still go through the
+// live check before changing a registration.
+func (e *Engine) pollStatus(ctx context.Context, batch *PollListing, state, binding *Object, home, agentID string) (string, error) {
+	record, err := e.stored(agentID, home)
+	status := StoredStatus(record)
+	if err != nil || status == "" {
+		if cli, ok := e.Paseo.(agentLister); ok {
+			status, err := batch.Status(ctx, cli, home, agentID)
+			if errors.Is(err, ErrCommandUnavailable) {
+				return "", err
+			}
+			if busyStatus(status) {
+				return StatusWaitingFailure, nil
+			}
+		}
+		return "", nil
+	}
+	if truthy(record.Value("archivedAt")) {
+		return "", nil
+	}
+	provider, gotProvider := record.String("provider")
+	cwd, gotCwd := record.String("cwd")
+	if !gotProvider || !gotCwd {
+		return "", nil
+	}
+	current, err := e.binding(Obj("Provider", provider, "Cwd", cwd), home)
+	if err != nil || !equal(current, binding) {
+		return "", nil
+	}
+
+	if busyStatus(status) {
+		return StatusWaitingFailure, nil
+	}
+	if status != "idle" && status != "closed" && status != "error" {
+		return "", nil
+	}
+	failure, err := e.failureOf(Obj("Status", status), record, binding)
+	if err != nil {
+		return "", nil // live status may make a transcript check unnecessary
+	}
+	if failure == "" {
+		if status != "error" {
+			return StatusWaitingFailure, nil
+		}
+		// A collected error may appear closed in Paseo. Check the transcript
+		// too before ruling out a failure when the record has no quota error.
+		if failure, err := e.failureOf(Obj("Status", "closed"), record, binding); err != nil || failure != "" {
+			return "", nil
+		}
+	}
+	claimed, _ := state.String("claimed_failure")
+	if failure == "" || failure == claimed {
+		return StatusWaitingNew, nil
+	}
+	return "", nil
 }
 
 // failureOf ports failure_of: the current failed turn's identity, or "".
@@ -256,6 +375,16 @@ func (e *Engine) quotaFor(ctx context.Context, home string, provider any, model 
 // error leaves the registration as it was, except after a send failure,
 // which disables it (the send may have happened).
 func (e *Engine) Tick(ctx context.Context, path string) (string, error) {
+	return e.tick(ctx, path, nil)
+}
+
+// Poll checks a registration with a file-first screen and a per-home listing
+// shared by the registrations due in this round.
+func (e *Engine) Poll(ctx context.Context, path string, batch *PollListing) (string, error) {
+	return e.tick(ctx, path, batch)
+}
+
+func (e *Engine) tick(ctx context.Context, path string, batch *PollListing) (string, error) {
 	unlock, err := lockFile(lockPath(path))
 	if err != nil {
 		return "", err
@@ -282,6 +411,19 @@ func (e *Engine) Tick(ctx context.Context, path string) (string, error) {
 		stored = NewObject()
 	}
 	setStatus := func(s string) { state.Set("status", s) }
+	if batch != nil {
+		status, err := e.pollStatus(ctx, batch, state, stored, home, agentID)
+		if err != nil {
+			return "", err
+		}
+		if status != "" {
+			if previous, _ := state.String("status"); previous == status {
+				return status, nil
+			}
+			setStatus(status)
+			return status, atomicWrite(path, state)
+		}
+	}
 	snapshot, err := e.Paseo.Inspect(ctx, agentID, home)
 	if err != nil {
 		return "", err

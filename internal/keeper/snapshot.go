@@ -2,6 +2,7 @@ package keeper
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"sync"
 	"time"
@@ -253,51 +254,87 @@ func (k *Keeper) prime(ctx context.Context) {
 func (k *Keeper) RefreshListing(ctx context.Context) {
 	for _, h := range k.Config.Paseo.Homes {
 		home := k.Engine.ResolveHome(h)
-		lctx, cancel := context.WithTimeout(ctx, 2*observeTimeout)
-		list, err := k.Paseo.List(lctx, home)
-		cancel()
-		if err != nil {
+		if err := k.refreshListing(ctx, home); err != nil {
 			k.Log.Printf("keeper: paseo ls: %v", err)
+		}
+	}
+}
+
+func (k *Keeper) runListing(ctx context.Context, home string) {
+	var retry paseo.CheckRetry
+	for ctx.Err() == nil {
+		err := k.refreshListing(ctx, home)
+		if ctx.Err() != nil {
+			return
+		}
+		now := time.Now()
+		next := now.Add(defaultEvery)
+		if errors.Is(err, paseo.ErrCommandUnavailable) {
+			if retry.Failed(now, defaultEvery) {
+				k.Log.Printf("keeper: paseo ls: %v", err)
+			}
+			next = retry.At
+		} else {
+			retry = paseo.CheckRetry{}
+			if err != nil {
+				k.Log.Printf("keeper: paseo ls: %v", err)
+			}
+		}
+		timer := time.NewTimer(time.Until(next))
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return
+		case <-timer.C:
+		}
+	}
+}
+
+func (k *Keeper) refreshListing(ctx context.Context, home string) error {
+	lctx, cancel := context.WithTimeout(ctx, 2*observeTimeout)
+	list, err := k.Paseo.List(lctx, home)
+	cancel()
+	if err != nil {
+		return err
+	}
+	m := k.mem()
+	m.mu.Lock()
+	m.lists[home] = &listing{at: k.nowS(), items: list}
+	// Drop agents of this home that are neither registered nor listed
+	// any more (archived or deleted).
+	listedNow := map[string]bool{}
+	for _, item := range list {
+		if raw, _ := item.String("id"); raw != "" {
+			if id, ok := paseo.CanonicalID(raw); ok {
+				listedNow[key(home, id)] = true
+			}
+		}
+	}
+	for agentKey := range m.agents {
+		h, _, _ := strings.Cut(agentKey, "\x00")
+		if _, reg := m.regs[agentKey]; h == home && !reg && !listedNow[agentKey] {
+			delete(m.agents, agentKey)
+		}
+	}
+	m.mu.Unlock()
+	var wg sync.WaitGroup
+	for _, item := range list {
+		raw, _ := item.String("id")
+		id, ok := paseo.CanonicalID(raw)
+		if !ok || ctx.Err() != nil {
 			continue
 		}
-		m := k.mem()
-		m.mu.Lock()
-		m.lists[home] = &listing{at: k.nowS(), items: list}
-		// Drop agents of this home that are neither registered nor listed
-		// any more (archived or deleted).
-		listedNow := map[string]bool{}
-		for _, item := range list {
-			if raw, _ := item.String("id"); raw != "" {
-				if id, ok := paseo.CanonicalID(raw); ok {
-					listedNow[key(home, id)] = true
-				}
-			}
+		m.mu.RLock()
+		_, reg := m.regs[key(home, id)]
+		m.mu.RUnlock()
+		if reg {
+			continue // the rounds observe it
 		}
-		for agentKey := range m.agents {
-			h, _, _ := strings.Cut(agentKey, "\x00")
-			if _, reg := m.regs[agentKey]; h == home && !reg && !listedNow[agentKey] {
-				delete(m.agents, agentKey)
-			}
-		}
-		m.mu.Unlock()
-		var wg sync.WaitGroup
-		for _, item := range list {
-			raw, _ := item.String("id")
-			id, ok := paseo.CanonicalID(raw)
-			if !ok || ctx.Err() != nil {
-				continue
-			}
-			m.mu.RLock()
-			_, reg := m.regs[key(home, id)]
-			m.mu.RUnlock()
-			if reg {
-				continue // the rounds observe it
-			}
-			k.dispatch(ctx, key(home, id), func(ctx context.Context) { _, _ = k.observeStore(ctx, id, home) }, &wg)
-		}
-		wg.Wait()
-		k.applyDefault(ctx, home, list)
+		k.dispatch(ctx, key(home, id), func(ctx context.Context) { _, _ = k.observeStore(ctx, id, home) }, &wg)
 	}
+	wg.Wait()
+	k.applyDefault(ctx, home, list)
+	return nil
 }
 
 // listed is the last listing of home, nil before the first.

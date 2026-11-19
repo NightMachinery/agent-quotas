@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"log"
 	"net/http"
 	"sync"
@@ -25,8 +26,15 @@ type paseoScheduler struct {
 	log  *log.Logger
 	kick chan paseoKick
 
-	mu   sync.Mutex
-	last map[string]time.Time
+	mu     sync.Mutex
+	checks map[string]*paseoCheck
+}
+
+type paseoCheck struct {
+	next    time.Time
+	retry   paseo.CheckRetry
+	running bool
+	pending bool
 }
 
 type paseoKick struct {
@@ -36,7 +44,7 @@ type paseoKick struct {
 }
 
 func newPaseoScheduler(eng *paseo.Engine, logger *log.Logger) *paseoScheduler {
-	return &paseoScheduler{eng: eng, log: logger, kick: make(chan paseoKick, 64), last: map[string]time.Time{}}
+	return &paseoScheduler{eng: eng, log: logger, kick: make(chan paseoKick, 64), checks: map[string]*paseoCheck{}}
 }
 
 func (s *paseoScheduler) request(k paseoKick) {
@@ -62,7 +70,7 @@ func boundAccount(r paseo.Registration) string {
 
 func (s *paseoScheduler) run(ctx context.Context) {
 	s.request(paseoKick{all: true})
-	ticker := time.NewTicker(15 * time.Second)
+	ticker := time.NewTicker(5 * time.Second)
 	defer ticker.Stop()
 	for {
 		var k paseoKick
@@ -85,43 +93,78 @@ func (s *paseoScheduler) round(ctx context.Context, k paseoKick) {
 		return
 	}
 	now := time.Now()
+	batches := map[string]*paseo.PollListing{}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	seen := make(map[string]bool, len(regs))
 	for _, r := range regs {
 		if !r.Enabled || ctx.Err() != nil {
 			continue
 		}
-		due := false
-		switch {
-		case k.all, k.path != "" && k.path == r.Path:
-			due = true
-		case k.account != "":
+		seen[r.Path] = true
+		forced := k.all || k.path != "" && k.path == r.Path
+		if k.account != "" {
 			b := boundAccount(r)
 			p, _, _ := model.SplitID(k.account)
-			due = b == k.account || (b == model.Codex && p == model.Codex)
+			forced = forced || b == k.account || b == model.Codex && p == model.Codex
 		}
-		s.mu.Lock()
-		last, seen := s.last[r.Path]
-		s.mu.Unlock()
-		poll := time.Duration(r.Poll) * time.Second
-		if poll < 30*time.Second {
-			poll = 30 * time.Second
+		check := s.checks[r.Path]
+		if check == nil {
+			check = &paseoCheck{}
+			s.checks[r.Path] = check
 		}
-		if !seen || now.Sub(last) >= poll {
-			due = true
-		}
-		if !due {
+		if check.running {
+			check.pending = check.pending || forced
 			continue
 		}
-		s.mu.Lock()
-		s.last[r.Path] = now
-		s.mu.Unlock()
-		status, err := s.eng.Tick(ctx, r.Path)
-		if err != nil {
+		if now.Before(check.retry.At) || (!forced && now.Before(check.next)) {
+			continue
+		}
+		home := s.eng.ResolveHome(r.Home)
+		batch := batches[home]
+		if batch == nil {
+			batch = &paseo.PollListing{}
+			batches[home] = batch
+		}
+		check.running = true
+		go s.check(ctx, r, check, batch)
+	}
+	for path, check := range s.checks {
+		if !seen[path] && !check.running {
+			delete(s.checks, path)
+		}
+	}
+}
+
+func (s *paseoScheduler) check(ctx context.Context, r paseo.Registration, check *paseoCheck, batch *paseo.PollListing) {
+	status, err := s.eng.Poll(ctx, r.Path, batch)
+	poll := max(30*time.Second, time.Duration(r.Poll)*time.Second)
+	now := time.Now()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	check.running = false
+	check.next = now.Add(poll)
+	if err != nil && status != paseo.StatusUncertain && errors.Is(err, paseo.ErrCommandUnavailable) {
+		if check.retry.Failed(now, poll) && ctx.Err() == nil {
 			s.log.Printf("paseo %s: check unavailable; no message sent (%v)", r.AgentID, err)
-			continue
 		}
-		if status != r.Status {
-			s.log.Printf("paseo %s: %s", r.AgentID, status)
+		check.next = check.retry.At
+		check.pending = false
+		return
+	}
+	check.retry = paseo.CheckRetry{}
+	if check.pending {
+		check.next = now
+		check.pending = false
+	}
+	if err != nil && ctx.Err() == nil {
+		if status == paseo.StatusUncertain {
+			s.log.Printf("paseo %s: %s (%v)", r.AgentID, status, err)
+		} else {
+			s.log.Printf("paseo %s: check unavailable; no message sent (%v)", r.AgentID, err)
 		}
+	} else if err == nil && status != r.Status {
+		s.log.Printf("paseo %s: %s", r.AgentID, status)
 	}
 }
 
