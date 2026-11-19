@@ -106,6 +106,7 @@ JSON, every key optional:
     ],
     "statusline_max_age_s": -1,
     "min_interval_s": 60,
+    "active_refresh_s": 300,
     "agy_binary": "agy"
   },
   "poll": {"force_floor_s": 5, "backoff_max_s": 1800},
@@ -805,7 +806,14 @@ differs:
   temporary home are discarded, as the Python did.
 - Antigravity: the slow path runs unforced at most once per `slow_fallback_s`
   (an hour) for an account whose cache has nothing; a cached window whose reset
-  has passed no longer blocks and marks the reading stale. The old flat bucket
+  has passed no longer blocks and marks the reading stale. Only agy's TUI
+  writes the statusline cache, so agy run any other way (Paseo's `agy acp`,
+  `agy -p`) spends quota while the cache stands still. When the account's
+  `antigravity-cli/conversations` or `conversation_summaries.db` is newer than
+  the cache's newest capture, a normal read takes the slow path instead, at
+  most once per `active_refresh_s` (300 s; -1 turns it off). The slow path
+  rewrites the cache, so that capture time spaces the runs; a failed run
+  serves the old cache. The old flat bucket
   array (`agy_status_json_p=y`) is not ported.
 - Native engine: one extra dotfile, `.blocked-state` (the blocked groups and
   their resets, for per-family grace); an unreadable idle time or a failed

@@ -63,9 +63,13 @@ type Agy struct {
 	MinIntervalS      int          `json:"min_interval_s,omitempty"`
 	// SlowFallbackS is the least time between two unforced slow-path runs
 	// (a full agy start-up) for an account whose cache has nothing.
-	SlowFallbackS int    `json:"slow_fallback_s,omitempty"`
-	TimeoutS      int    `json:"timeout_s,omitempty"`
-	Binary        string `json:"agy_binary,omitempty"`
+	SlowFallbackS int `json:"slow_fallback_s,omitempty"`
+	// ActiveRefreshS is the least time between two slow-path runs for an
+	// account used since its cache was written (agy without a statusline,
+	// such as Paseo's `agy acp`). 0 means the default, 300; -1 turns it off.
+	ActiveRefreshS int    `json:"active_refresh_s,omitempty"`
+	TimeoutS       int    `json:"timeout_s,omitempty"`
+	Binary         string `json:"agy_binary,omitempty"`
 }
 
 // Poll configures scheduling shared by all pollers.
@@ -286,6 +290,9 @@ func (c *Config) applyDefaults() {
 	}
 	if c.Agy.SlowFallbackS == 0 {
 		c.Agy.SlowFallbackS = 3600
+	}
+	if c.Agy.ActiveRefreshS == 0 {
+		c.Agy.ActiveRefreshS = 300
 	}
 	if c.Agy.TimeoutS == 0 {
 		c.Agy.TimeoutS = 90

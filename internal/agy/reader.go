@@ -272,6 +272,9 @@ func (r *Reader) quota(ctx context.Context, a Account, force bool, now time.Time
 		}
 		return r.fallback(ctx, a, now, "agy (cache older than "+ageFmt(maxAge)+")")
 	}
+	if res, ok := r.refreshIfUsed(ctx, a, rows, now); ok {
+		return res
+	}
 	res := readResult{source: "statusline", captures: map[string]float64{}}
 	oldest, undated := int64(0), false
 	var sources []string
@@ -315,6 +318,61 @@ func (r *Reader) quota(ctx context.Context, a Account, force bool, now time.Time
 	res.notes = append(res.notes, model.Note{Severity: model.Info, Text: "Cache " + ageFmt(int(oldest)) + " old (" + detail + ")"})
 	res.fetched = earliest
 	return res
+}
+
+// refreshIfUsed runs the slow path when the account was used after the
+// cache's newest capture. Only agy's TUI renders a statusline, so agy run
+// any other way (`agy acp` under Paseo, `agy -p`) spends quota while the
+// cache stands still; without this, the cache would be served as current
+// for as long as it exists. The slow path rewrites the cache, so its new
+// capture time is what spaces the runs out: at most one per
+// active_refresh_s (default 300) per account, and lastSlow covers a run that
+// failed. ok is false when the cache should be served as it is, which is
+// also what a failed refresh does: an old reading beats an error.
+func (r *Reader) refreshIfUsed(ctx context.Context, a Account, rows []cacheRow, now time.Time) (readResult, bool) {
+	if r.CacheOnly || r.cfg.Agy.ActiveRefreshS < 0 {
+		return readResult{}, false
+	}
+	newest := -1.0
+	for _, row := range rows {
+		newest = math.Max(newest, row.Captured)
+	}
+	if newest < 0 {
+		return readResult{}, false
+	}
+	used := a.LastUsed()
+	s := r.cfg.Agy.ActiveRefreshS
+	if s == 0 {
+		s = 300 // a config built without config.Load's defaults
+	}
+	interval := time.Duration(s) * time.Second
+	if used.IsZero() || !used.After(time.Unix(int64(newest), 0)) || now.Sub(time.Unix(int64(newest), 0)) < interval {
+		return readResult{}, false
+	}
+	r.mu.Lock()
+	last, ran := r.lastSlow[a.Name]
+	r.mu.Unlock()
+	if ran && now.Sub(last) < interval && now.Sub(last) >= 0 {
+		return readResult{}, false
+	}
+	res := r.slow(ctx, a, now, "agy (used since the cache was written)")
+	if res.err != nil {
+		return readResult{}, false
+	}
+	return res, true
+}
+
+// LastUsed is when agy last wrote to this account's state: a conversation
+// or its summary index, which every turn touches, TUI or not. Zero when
+// neither exists.
+func (a Account) LastUsed() time.Time {
+	var t time.Time
+	for _, name := range []string{"conversations", "conversation_summaries.db"} {
+		if fi, err := os.Stat(filepath.Join(a.CLIDir(), name)); err == nil && fi.ModTime().After(t) {
+			t = fi.ModTime()
+		}
+	}
+	return t
 }
 
 // fallback is the slow path taken because the cache had nothing to serve.
