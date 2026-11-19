@@ -696,31 +696,49 @@ func TestDefaultAutoContinuePreservesPriorDecisions(t *testing.T) {
 	if _, err := h.k.setAutoContinue(ctx, agentB, h.home, false, "api"); err != nil {
 		t.Fatal(err)
 	}
-	// Older cache-only and explicitly disabled records are indistinguishable.
-	h.set(agentC, PolicyWarm)
-	state, err := paseo.ReadObject(h.path(agentC))
-	if err != nil {
-		t.Fatal(err)
-	}
-	legacy := paseo.NewObject()
-	for _, key := range state.Keys() {
-		if key != "set_by" {
-			legacy.Set(key, state.Value(key))
+	// Older files have no set_by. One the keeper created with its cache policy
+	// (registered in the same moment) is undecided; one disabled before its
+	// cache policy was set is an explicit off.
+	stripSetBy := func(id string) {
+		state, err := paseo.ReadObject(h.path(id))
+		if err != nil {
+			t.Fatal(err)
+		}
+		legacy := paseo.NewObject()
+		for _, key := range state.Keys() {
+			if key != "set_by" {
+				legacy.Set(key, state.Value(key))
+			}
+		}
+		if err := paseo.AtomicWrite(h.path(id), legacy); err != nil {
+			t.Fatal(err)
 		}
 	}
-	if err := paseo.AtomicWrite(h.path(agentC), legacy); err != nil {
+	h.set(agentC, PolicyWarm)
+	stripSetBy(agentC)
+	h.agent(agentE, sessionE)
+	if _, err := h.eng.Off(ctx, agentE, h.home); err != nil {
 		t.Fatal(err)
 	}
+	h.now += 600
+	h.set(agentE, PolicyWarm)
+	stripSetBy(agentE)
 
-	for _, id := range []string{agentA, agentB, agentC, agentD} {
+	h.realTurn(sessionC, h.now-60, small)
+	h.realTurn(sessionE, h.now-60, small)
+	for _, id := range []string{agentA, agentB, agentC, agentD, agentE} {
 		h.paseo.list = append(h.paseo.list, paseo.Obj("id", id))
 	}
 	h.k.RefreshListing(ctx)
-	for _, tc := range []struct{ id, source string }{{agentA, "cli"}, {agentB, "api"}, {agentC, ""}} {
+	for _, tc := range []struct{ id, source string }{{agentA, "cli"}, {agentB, "api"}, {agentE, ""}} {
 		h.k.refreshPath(h.path(tc.id))
 		if ac := h.view(tc.id).AutoContinue; ac == nil || ac.Enabled || ac.SetBy != tc.source {
 			t.Fatalf("default changed %s: %+v", tc.id, ac)
 		}
+	}
+	h.k.refreshPath(h.path(agentC))
+	if ac := h.view(agentC).AutoContinue; ac == nil || !ac.Enabled || ac.SetBy != "default" {
+		t.Fatalf("keeper-created legacy file did not get the default: %+v", ac)
 	}
 	if _, err := os.Stat(h.path(agentD)); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("internal agent got a file: %v", err)

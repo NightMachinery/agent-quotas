@@ -435,9 +435,51 @@ func ContinueDecided(state *Object) bool {
 		return false
 	}
 	// Older files did not distinguish an explicit Off from a keeper-only
-	// registration. Treat them as decided so an upgrade cannot undo an opt-out.
+	// registration. Treat them as decided so an upgrade cannot undo an opt-out,
+	// except a file the keeper created to hold a cache policy: it was
+	// registered in the same moment its cache policy was set.
 	source, hasSource := state.Get("set_by")
+	if !hasSource && !truthy(state.Value("enabled")) && keeperCreated(state) {
+		return false
+	}
 	return !hasSource || source != nil || truthy(state.Value("enabled"))
+}
+
+// keeperCreatedSlack is how far apart registered_at and the cache policy's
+// set_at may be for a file the keeper created with the policy.
+const keeperCreatedSlack = 5.0
+
+func keeperCreated(state *Object) bool {
+	cache, ok := state.Object("cache")
+	if !ok {
+		return false
+	}
+	registered, setAt := epochOf(state.Value("registered_at")), epochOf(cache.Value("set_at"))
+	if registered <= 0 || setAt <= 0 {
+		return false
+	}
+	d := setAt - registered
+	return d >= -keeperCreatedSlack && d <= keeperCreatedSlack
+}
+
+// epochOf reads a Unix time stored as a number (json.Number from a file,
+// float64 or int in memory); anything else is 0.
+func epochOf(v any) float64 {
+	switch n := v.(type) {
+	case json.Number:
+		f, err := n.Float64()
+		if err != nil {
+			return 0
+		}
+		return f
+	case float64:
+		return n
+	case int:
+		return float64(n)
+	case int64:
+		return float64(n)
+	}
+	return 0
 }
 
 // On registers an agent (exact UUID; poll >= 30 s; local daemon only;
