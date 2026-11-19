@@ -110,8 +110,8 @@ type Keeper struct {
 	// Enabled runs the keeper's observations and sends; nil means false.
 	// The read API answers either way.
 	Enabled *bool `json:"enabled,omitempty"`
-	// DefaultPolicy is applied once to recently active agents without a
-	// decided policy: off (default), compact or warm.
+	// DefaultPolicy is applied once to recently active main agents (not
+	// subagents) without a decided policy: off (default), compact or warm.
 	DefaultPolicy string `json:"default_policy,omitempty"`
 	// TTLSeconds is the prompt-cache lifetime per provider (claude, codex).
 	TTLSeconds               map[string]int `json:"ttl_seconds,omitempty"`

@@ -491,17 +491,20 @@ func scanTimeline(items []*paseo.Object) (completed, canceled bool) {
 	return completed, canceled
 }
 
-// applyDefault gives the default policy, once, to recently active agents
-// of a listing whose policy was never decided. It decides from the
+// applyDefault gives the default policy, once, to recently active main
+// agents (not subagents) of a listing whose policy was never decided. It decides from the
 // observations in memory and looks again (files only) before setting.
+// parentLabel is the label Paseo sets on an agent another agent created.
+const parentLabel = "paseo.parent-agent-id"
+
 func (k *Keeper) applyDefault(ctx context.Context, home string, list []*paseo.Object) {
 	policy := k.Config.Keeper.DefaultPolicy
 	if policy == "" || policy == PolicyOff || !k.Enabled() {
 		return
 	}
 	undecided := func(o *obs) bool {
-		if o.record == nil || o.archived() || o.record.Value("internal") == true {
-			return false
+		if o.record == nil || o.archived() || o.record.Value("internal") == true || o.child() {
+			return false // subagents: their parent decides
 		}
 		if o.cache != nil && o.cache.SetAt > 0 {
 			return false // decided before

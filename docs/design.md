@@ -696,8 +696,10 @@ Config (`keeper`): `enabled` (default **false** until the owner turns it on),
 `default_policy` (default `off`; applied once, with `set_by: "default"`, to
 agents whose policy was never set (no file, no `cache` object, or one created
 only to hold a manual compaction, `set_at` 0), when the daemon first sees them,
-and only to agents that are not archived and had real activity in the last
-24 h), `ttl_seconds`, `lead_seconds`, `quiet_seconds`,
+and only to main agents that are not archived and had real activity in the
+last 24 h; a subagent, one whose Paseo record has a `parentAgentId` or the
+`paseo.parent-agent-id` label, is left to its parent, which sets its policy
+explicitly if it wants one), `ttl_seconds`, `lead_seconds`, `quiet_seconds`,
 `warm_hours`, `ping_text`, `send_behavior`, `compaction_timeout_seconds`.
 
 ### Serving reads from memory
