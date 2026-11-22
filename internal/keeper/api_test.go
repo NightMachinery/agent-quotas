@@ -48,6 +48,28 @@ func TestHTTPRoutes(t *testing.T) {
 	if code, out := do("GET", "/v1/agents?policy=warm", ""); code != 200 || len(out["agents"].([]any)) != 1 || out["keeper_enabled"] != true {
 		t.Fatalf("list: %d %v", code, out)
 	}
+	acCase := func(body string, want int, enabled bool, source string) {
+		t.Helper()
+		code, out := do("POST", "/v1/agents/"+agentA+"/auto-continue"+home, body)
+		if code != want {
+			t.Fatalf("auto-continue %s: %d %v", body, code, out)
+		}
+		if want != 200 {
+			return
+		}
+		agent, _ := out["agent"].(map[string]any)
+		ac, _ := agent["auto_continue"].(map[string]any)
+		if ac["enabled"] != enabled || ac["set_by"] != source {
+			t.Fatalf("auto-continue %s: %v", body, ac)
+		}
+	}
+	acCase(`{"enabled":true,"set_by":"default"}`, 200, true, "default")
+	acCase(`{"enabled":false,"set_by":"desk"}`, 200, false, "desk")
+	acCase(`{"enabled":true,"set_by":"default"}`, 200, false, "desk")
+	acCase(`{"enabled":true,"set_by":"default","reset":true}`, 200, true, "default")
+	acCase(`{"enabled":true,"reset":true}`, 400, false, "")
+	acCase(`{"enabled":true,"set_by":"bogus"}`, 400, false, "")
+	acCase(`{"enabled":false}`, 200, false, "api")
 	if code, _ := do("GET", "/v1/agents/"+agentB+home, ""); code != 404 {
 		t.Fatalf("unknown agent: %d", code)
 	}

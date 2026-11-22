@@ -607,7 +607,7 @@ func (k *Keeper) applyDefault(ctx context.Context, home string, list []*paseo.Ob
 			}
 		}
 		if wantsAuto(o) && o.identOK {
-			if _, err := k.setAutoContinue(ctx, id, home, true, "default"); err != nil {
+			if _, err := k.setAutoContinue(ctx, id, home, true, "default", paseo.DefaultOnce); err != nil {
 				k.Log.Printf("paseo %s: default auto-continue: %v", id, err)
 			}
 		}

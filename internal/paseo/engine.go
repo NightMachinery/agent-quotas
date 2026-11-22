@@ -587,6 +587,46 @@ func ContinueDecided(state *Object) bool {
 	return !hasSource || source != nil || truthy(state.Value("enabled"))
 }
 
+// ContinueExplicit reports whether the registration holds a decision made
+// for this agent itself: decided, and not by a default.
+func ContinueExplicit(state *Object) bool {
+	if !ContinueDecided(state) {
+		return false
+	}
+	source, _ := state.String("set_by")
+	return source != "default"
+}
+
+// DefaultMode is how a default decision treats the decision already
+// recorded.
+type DefaultMode int
+
+const (
+	// DefaultOnce decides only where nothing is decided yet (the keeper's own
+	// default for main agents).
+	DefaultOnce DefaultMode = iota
+	// DefaultFollow also replaces an earlier default, so a default can follow
+	// a setting that changed; a decision made for the agent itself stands.
+	DefaultFollow
+	// DefaultReset replaces any decision: the agent follows the default again.
+	DefaultReset
+)
+
+// defaultMay reports whether a default decision for enabled may replace
+// state; one that would change nothing is not written.
+func defaultMay(state *Object, enabled bool, mode DefaultMode) bool {
+	if source, _ := state.String("set_by"); source == "default" && truthy(state.Value("enabled")) == enabled {
+		return false
+	}
+	switch mode {
+	case DefaultReset:
+		return true
+	case DefaultFollow:
+		return !ContinueExplicit(state)
+	}
+	return !ContinueDecided(state)
+}
+
 // keeperCreatedSlack is how far apart registered_at and the cache policy's
 // set_at may be for a file the keeper created with the policy.
 const keeperCreatedSlack = 5.0
@@ -628,29 +668,30 @@ func epochOf(v any) float64 {
 // archived agents refused). Repeating it for an enabled registration with
 // the same binding keeps the claimed failure.
 func (e *Engine) On(ctx context.Context, agentID, home string, poll int) (string, error) {
-	out, _, err := e.enable(ctx, agentID, home, poll, "cli")
+	out, _, err := e.enable(ctx, agentID, home, poll, "cli", DefaultOnce)
 	return out, err
 }
 
 // Off disables a registration under the tick lock, so no send is in flight
 // when it returns.
 func (e *Engine) Off(_ context.Context, agentID, home string) (string, error) {
-	out, _, err := e.disable(agentID, home, "cli")
+	out, _, err := e.disable(agentID, home, "cli", DefaultOnce)
 	return out, err
 }
 
 // SetAutoContinue uses the CLI registration path for an API or default
-// decision. It returns the changed file, or "" if no decision was recorded.
-func (e *Engine) SetAutoContinue(ctx context.Context, agentID, home string, enabled bool, setBy string) (string, error) {
+// decision; mode says what a default may replace (see DefaultMode). It
+// returns the changed file, or "" if no decision was recorded.
+func (e *Engine) SetAutoContinue(ctx context.Context, agentID, home string, enabled bool, setBy string, mode DefaultMode) (string, error) {
 	if enabled {
-		_, path, err := e.enable(ctx, agentID, home, 300, setBy)
+		_, path, err := e.enable(ctx, agentID, home, 300, setBy, mode)
 		return path, err
 	}
-	_, path, err := e.disable(agentID, home, setBy)
+	_, path, err := e.disable(agentID, home, setBy, mode)
 	return path, err
 }
 
-func (e *Engine) enable(ctx context.Context, agentID, home string, poll int, setBy string) (string, string, error) {
+func (e *Engine) enable(ctx context.Context, agentID, home string, poll int, setBy string, mode DefaultMode) (string, string, error) {
 	agentID, err := e.validate(agentID, poll)
 	if err != nil {
 		return "", "", err
@@ -683,8 +724,8 @@ func (e *Engine) enable(ctx context.Context, agentID, home string, poll int, set
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return "", "", err
 	}
-	if setBy == "default" && ContinueDecided(previous) {
-		return "", "", nil // An explicit decision may have arrived since the listing.
+	if setBy == "default" && !defaultMay(previous, true, mode) {
+		return "", "", nil // A decision may have arrived since the listing.
 	}
 	if setBy != "cli" {
 		if n, ok := numberOf(previous.Value("poll")); ok && n >= 30 {
@@ -711,7 +752,7 @@ func (e *Engine) enable(ctx context.Context, agentID, home string, poll int, set
 	return out, path, nil
 }
 
-func (e *Engine) disable(agentID, home, setBy string) (string, string, error) {
+func (e *Engine) disable(agentID, home, setBy string, mode DefaultMode) (string, string, error) {
 	agentID, err := e.validate(agentID, 300)
 	if err != nil {
 		return "", "", err
@@ -727,6 +768,9 @@ func (e *Engine) disable(agentID, home, setBy string) (string, string, error) {
 	}
 	defer unlock()
 	state, err := readObject(path)
+	if setBy == "default" && (errors.Is(err, os.ErrNotExist) || err == nil && !defaultMay(state, false, mode)) {
+		return "", "", nil // nothing on to turn off, or a decision that stands
+	}
 	if errors.Is(err, os.ErrNotExist) {
 		record, err := e.stored(agentID, home)
 		if err != nil || !equal(record.Value("id"), agentID) {

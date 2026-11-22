@@ -693,7 +693,7 @@ func TestDefaultAutoContinuePreservesPriorDecisions(t *testing.T) {
 	if _, err := h.eng.Off(ctx, agentA, h.home); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := h.k.setAutoContinue(ctx, agentB, h.home, false, "api"); err != nil {
+	if _, err := h.k.setAutoContinue(ctx, agentB, h.home, false, "api", paseo.DefaultOnce); err != nil {
 		t.Fatal(err)
 	}
 	// Older files have no set_by. One the keeper created with its cache policy
@@ -743,4 +743,43 @@ func TestDefaultAutoContinuePreservesPriorDecisions(t *testing.T) {
 	if _, err := os.Stat(h.path(agentD)); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("internal agent got a file: %v", err)
 	}
+}
+
+// A default that follows a setting replaces only an earlier default; a
+// decision made for the agent stands until a reset.
+func TestDefaultAutoContinueFollowsSetting(t *testing.T) {
+	h := newHarness(t)
+	h.agent(agentA, sessionA)
+	h.agent(agentB, sessionB)
+	ctx := context.Background()
+	check := func(id string, enabled bool, source, what string) {
+		t.Helper()
+		h.k.refreshPath(h.path(id))
+		if ac := h.view(id).AutoContinue; ac == nil || ac.Enabled != enabled || ac.SetBy != source {
+			t.Fatalf("%s: %+v", what, ac)
+		}
+	}
+	set := func(id string, enabled bool, source string, mode paseo.DefaultMode) {
+		t.Helper()
+		if _, err := h.k.setAutoContinue(ctx, id, h.home, enabled, source, mode); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Undecided: a default turning it off writes nothing.
+	set(agentA, false, "default", paseo.DefaultFollow)
+	if _, err := os.Stat(h.path(agentA)); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("a default off for an undecided agent wrote a file: %v", err)
+	}
+	set(agentA, true, "default", paseo.DefaultFollow)
+	check(agentA, true, "default", "default on")
+	set(agentA, false, "default", paseo.DefaultFollow)
+	check(agentA, false, "default", "a changed default follows")
+	set(agentA, true, "default", paseo.DefaultOnce)
+	check(agentA, false, "default", "the keeper's once-only default replaced a default")
+
+	set(agentB, false, "desk", paseo.DefaultFollow)
+	set(agentB, true, "default", paseo.DefaultFollow)
+	check(agentB, false, "desk", "a default replaced the agent's own choice")
+	set(agentB, true, "default", paseo.DefaultReset)
+	check(agentB, true, "default", "reset")
 }

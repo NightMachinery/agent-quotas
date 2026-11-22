@@ -348,7 +348,9 @@ daemon take that lock and record `claimed_failure` before sending, running both
 during the cutover cannot send twice for one failed turn.
 
 `paseo.default_auto_continue` (false by default) uses the periodic Paseo
-listing to enable agents with real activity in the last 24 hours. It skips
+listing to enable agents with real activity in the last 24 hours. Where
+agent-desk applies its own inherited defaults (through the API above), leave
+this off: it enables main agents whatever the desk's setting says. It skips
 archived, internal and child agents and requires a supported seat. A default
 decision can only be written once. It never overwrites a prior decision,
 including `off` recorded before an agent was ever enabled. New cache-only
@@ -705,7 +707,14 @@ Act:
   `{"enabled": false}` records an API decision and returns the same envelope
   as `GET /v1/agents/{id}`. It preserves cache state and, for a repeated on
   with the same binding, preserves the claimed turn. Older registrations
-  with no recorded source omit `auto_continue.set_by`.
+  with no recorded source omit `auto_continue.set_by`. `"set_by"` names who
+  decided (`api` when absent, or `agent`, `desk`, `cli`). `"set_by":
+  "default"` records a default instead, such as agent-desk's inherited
+  setting: it replaces only no decision or an earlier default, so it can
+  follow a setting that changed, while a decision made for the agent stands;
+  with `"reset": true` it replaces that decision too, and the agent follows
+  the default again. A default that would change nothing, or turn off an
+  agent with no registration, writes nothing.
 
 Cache actions return 503 `keeper_disabled` while the keeper is disabled.
 

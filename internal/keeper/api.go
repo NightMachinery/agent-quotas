@@ -348,7 +348,7 @@ func (k *Keeper) setPolicy(ctx context.Context, id, home, policy string, warmHou
 }
 
 // setAutoContinue applies an API or default decision through the Paseo engine.
-func (k *Keeper) setAutoContinue(ctx context.Context, id, home string, enabled bool, setBy string) (View, error) {
+func (k *Keeper) setAutoContinue(ctx context.Context, id, home string, enabled bool, setBy string, mode paseo.DefaultMode) (View, error) {
 	id, err := canonical(id)
 	if err != nil {
 		return View{}, err
@@ -361,7 +361,7 @@ func (k *Keeper) setAutoContinue(ctx context.Context, id, home string, enabled b
 	if record.Value("archivedAt") != nil {
 		return View{}, fmt.Errorf("%w: the agent is archived", ErrBadRequest)
 	}
-	path, err := k.Engine.SetAutoContinue(ctx, id, home, enabled, setBy)
+	path, err := k.Engine.SetAutoContinue(ctx, id, home, enabled, setBy, mode)
 	if err != nil {
 		return View{}, err
 	}
@@ -587,7 +587,9 @@ func (k *Keeper) Register(m Mux) {
 	})
 	m.Handle("POST /v1/agents/{id}/auto-continue", func(w http.ResponseWriter, r *http.Request) {
 		var req struct {
-			Enabled *bool `json:"enabled"`
+			Enabled *bool  `json:"enabled"`
+			SetBy   string `json:"set_by"`
+			Reset   bool   `json:"reset"`
 		}
 		if err := daemon.ReadJSON(r, &req); err != nil {
 			writeErr(w, err)
@@ -597,7 +599,26 @@ func (k *Keeper) Register(m Mux) {
 			writeErr(w, fmt.Errorf("%w: enabled must be a boolean", ErrBadRequest))
 			return
 		}
-		v, err := k.setAutoContinue(r.Context(), r.PathValue("id"), r.URL.Query().Get("home"), *req.Enabled, "api")
+		// set_by default is a default decision: it replaces only an earlier
+		// default (a setting that changed), or with reset any decision.
+		mode := paseo.DefaultFollow
+		switch {
+		case req.SetBy == "":
+			req.SetBy = "api"
+		case req.SetBy == "default" && req.Reset:
+			mode = paseo.DefaultReset
+		case req.SetBy == "api" || req.SetBy == "default":
+		default:
+			if _, err := validSetBy(req.SetBy, false); err != nil {
+				writeErr(w, fmt.Errorf("%w: set_by must be api, agent, desk, cli or default", ErrBadRequest))
+				return
+			}
+		}
+		if req.Reset && req.SetBy != "default" {
+			writeErr(w, fmt.Errorf("%w: reset goes with set_by default", ErrBadRequest))
+			return
+		}
+		v, err := k.setAutoContinue(r.Context(), r.PathValue("id"), r.URL.Query().Get("home"), *req.Enabled, req.SetBy, mode)
 		if err != nil {
 			writeErr(w, err)
 			return
