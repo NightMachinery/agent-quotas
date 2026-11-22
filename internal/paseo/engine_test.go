@@ -173,22 +173,46 @@ func (h *harness) tick() string {
 
 // A subagent is resumed with a prompt that sends it to its parent first,
 // found by parentAgentId or by the label Paseo puts on agent-made agents.
+// One whose parent is archived or gone is told not to message it.
 func TestQuotaRecoveryAsksSubagentToRecoordinate(t *testing.T) {
-	for _, extra := range []*Object{
-		Obj("parentAgentId", "parent-id"),
-		Obj("labels", Obj(ParentLabel, "parent-id")),
-	} {
+	parentRecord := Obj("id", "parent-id", "lastStatus", "idle")
+	cases := []struct {
+		extra  *Object
+		parent *Object // nil: no record
+		want   []string
+	}{
+		{Obj("parentAgentId", "parent-id"), parentRecord, []string{"paseo send parent-id", "wait for its answer"}},
+		{Obj("labels", Obj(ParentLabel, "parent-id")), parentRecord, []string{"paseo send parent-id", "wait for its answer"}},
+		{Obj("parentAgentId", "parent-id"), Obj("id", "parent-id", "archivedAt", "2026-11-22T20:00:00Z"),
+			[]string{"archived since", "Do not message it", "stop without further changes"}},
+		{Obj("parentAgentId", "parent-id"), nil, []string{"not in this Paseo", "tell the user"}},
+	}
+	for i, c := range cases {
 		h := newHarness(t)
-		for _, k := range extra.Keys() {
-			h.record.Set(k, extra.Value(k))
+		for _, k := range c.extra.Keys() {
+			h.record.Set(k, c.extra.Value(k))
+		}
+		own := h.e.storedFn
+		h.e.storedFn = func(agentID, home string) (*Object, error) {
+			if agentID != "parent-id" {
+				return own(agentID, home)
+			}
+			if c.parent == nil {
+				return nil, refuse("Cannot find one local persisted Paseo agent")
+			}
+			return c.parent, nil
 		}
 		if s := h.tick(); !strings.Contains(s, "sent") {
 			t.Fatal(s)
 		}
 		text := h.paseo.sent[0].text
-		if !strings.HasPrefix(text, "Continue: ") || !strings.Contains(text, "paseo send parent-id") ||
-			!strings.Contains(text, "wait for its answer") {
-			t.Fatalf("subagent prompt: %q", text)
+		for _, w := range append([]string{"Continue: ", "parent-id"}, c.want...) {
+			if !strings.Contains(text, w) {
+				t.Fatalf("case %d: no %q in %q", i, w, text)
+			}
+		}
+		if c.parent != parentRecord && strings.Contains(text, "paseo send") {
+			t.Fatalf("case %d: tells it to message a parent it cannot ask: %q", i, text)
 		}
 	}
 }

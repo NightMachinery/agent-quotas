@@ -32,16 +32,39 @@ func ParentOf(record *Object) string {
 	return ""
 }
 
+// ParentState is whether a subagent's parent can still be asked.
+type ParentState int
+
+const (
+	ParentLive     ParentState = iota // in this Paseo home, not archived
+	ParentArchived                    // a prompt would unarchive and wake it
+	ParentMissing                     // deleted, or another daemon's agent
+)
+
 // ResumeText resumes an agent whose last work turn failed on quota. A
 // subagent asks its parent before going on: while it was stopped, the parent
 // may have handed its task to a replacement, done it itself or changed
 // plans, and a child that simply continued would duplicate or undo that.
-func ResumeText(parent string) string {
+// A subagent whose parent is archived or gone is told not to message it
+// (Paseo unarchives an agent a prompt is sent to) and to stop unless the
+// work is clearly still wanted.
+func ResumeText(parent string, state ParentState) string {
 	if parent == "" {
 		return ContinueText
 	}
-	return "Continue: your usage limit has reset, and agent-quotas resumed the turn it stopped. " +
-		"Your parent agent (" + parent + ") may have moved on while you were stopped: given your task " +
+	const resumed = "Continue: your usage limit has reset, and agent-quotas resumed the turn it stopped. "
+	switch state {
+	case ParentArchived, ParentMissing:
+		why := "has been archived since. Do not message it: a message would unarchive and wake it"
+		if state == ParentMissing {
+			why = "is not in this Paseo any more (deleted, or run by another daemon), so it cannot be asked"
+		}
+		return resumed + "Your parent agent (" + parent + ") " + why + ". Nobody may be waiting for " +
+			"this work. First check whether it was finished or taken over elsewhere (recent commits, " +
+			"the files you were changing). If it was, or you cannot tell whether it is still wanted, " +
+			"stop without further changes. Either way, tell the user briefly what you found and what you did."
+	}
+	return resumed + "Your parent agent (" + parent + ") may have moved on while you were stopped: given your task " +
 		"to another agent, done it itself, or changed its plan. Before doing more, re-coordinate: " +
 		"message it (paseo send " + parent + ", or the send_agent_prompt tool) with where you stopped " +
 		"and what you would do next, ask whether to go on, then end your turn and wait for its answer. " +

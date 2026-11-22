@@ -148,6 +148,23 @@ func (e *Engine) stored(agentID, home string) (*Object, error) {
 	return storedAgent(agentID, home)
 }
 
+// parentState looks a subagent's parent up in the same Paseo home. A record
+// that cannot be read counts as missing: the child is then told to check
+// for itself rather than to message an agent that may not exist.
+func (e *Engine) parentState(parent, home string) ParentState {
+	if parent == "" {
+		return ParentLive
+	}
+	record, err := e.stored(parent, home)
+	switch {
+	case err != nil || record == nil:
+		return ParentMissing
+	case truthy(record.Value("archivedAt")):
+		return ParentArchived
+	}
+	return ParentLive
+}
+
 func (e *Engine) transcript(record *Object, id Identity) (string, error) {
 	if e.transcriptFn != nil {
 		return e.transcriptFn(record, id)
@@ -505,7 +522,8 @@ func (e *Engine) tick(ctx context.Context, path string, batch *PollListing) (str
 			if e.Config != nil {
 				behavior = e.Config.Paseo.SendBehavior
 			}
-			if err := e.Paseo.Send(ctx, agentID, home, ResumeText(ParentOf(record)), SendBehavior(behavior, e.getenv)); err != nil {
+			parent := ParentOf(record)
+			if err := e.Paseo.Send(ctx, agentID, home, ResumeText(parent, e.parentState(parent, home)), SendBehavior(behavior, e.getenv)); err != nil {
 				// A timeout can mean Paseo accepted the send. Never retry
 				// that failed turn automatically; explicit re-arm clears it.
 				state.Set("enabled", false)

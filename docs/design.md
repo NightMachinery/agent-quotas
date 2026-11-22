@@ -406,7 +406,13 @@ The live check retains the following guarantees:
     re-coordinate first: message its parent with where it stopped and what it
     would do next, then wait for the answer. While it was stopped, the parent
     may have given its task to a replacement, done it itself or changed plans,
-    and a child that simply continued would duplicate or undo that work.
+    and a child that simply continued would duplicate or undo that work. The
+    parent is looked up in the same home first: when it is archived or has no
+    record (deleted, or another daemon's agent), the child is told not to
+    message it, since Paseo unarchives an agent a prompt is sent to, and to
+    stop unless the work is clearly still wanted, telling the user either way.
+    A Paseo agent started by an agent outside Paseo records no parent and is
+    resumed as a main agent.
 11. A failed or timed-out send disables the registration
     (`send uncertain; inspect agent and re-arm explicitly`).
 
