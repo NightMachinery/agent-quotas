@@ -531,7 +531,7 @@ func TestDefaultPolicyFilter(t *testing.T) {
 	h.record(agentC, sessionC, "idle", map[string]any{"archivedAt": iso(h.now)})
 	h.agent(agentD, sessionD) // a subagent, by label
 	h.realTurn(sessionD, h.now-60, small)
-	h.record(agentD, sessionD, "idle", map[string]any{"labels": paseo.Obj(parentLabel, agentA)})
+	h.record(agentD, sessionD, "idle", map[string]any{"labels": paseo.Obj(paseo.ParentLabel, agentA)})
 	h.agent(agentE, sessionE) // a subagent, by parent id
 	h.realTurn(sessionE, h.now-60, small)
 	h.record(agentE, sessionE, "idle", map[string]any{"parentAgentId": agentA})
@@ -638,7 +638,7 @@ func TestDefaultAutoContinueFilter(t *testing.T) {
 	h.agent(agentC, sessionC)
 	h.record(agentC, sessionC, "idle", map[string]any{"archivedAt": iso(h.now)})
 	h.agent(agentD, sessionD)
-	h.record(agentD, sessionD, "idle", map[string]any{"labels": paseo.Obj(parentLabel, agentA)})
+	h.record(agentD, sessionD, "idle", map[string]any{"labels": paseo.Obj(paseo.ParentLabel, agentA)})
 	h.agent(agentE, sessionE)
 	h.record(agentE, sessionE, "idle", map[string]any{"parentAgentId": agentA})
 	for _, id := range []string{agentA, agentB, agentC, agentD, agentE} {

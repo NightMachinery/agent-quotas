@@ -424,18 +424,7 @@ func (o *obs) archived() bool {
 // subagent: a parent id, or the `paseo.parent-agent-id` label Paseo puts on
 // agents created by an agent.
 func (o *obs) child() bool {
-	if o.record == nil {
-		return false
-	}
-	if s, ok := o.record.String("parentAgentId"); ok && s != "" {
-		return true
-	}
-	labels, ok := o.record.Object("labels")
-	if !ok {
-		return false
-	}
-	s, _ := labels.String(parentLabel)
-	return s != ""
+	return paseo.ParentOf(o.record) != ""
 }
 
 func (o *obs) pendingPermission() bool {

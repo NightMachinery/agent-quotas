@@ -10,8 +10,44 @@ import (
 	"github.com/NightMachinery/agent-quotas/internal/procx"
 )
 
-// ContinueText resumes an agent whose last work turn failed on quota.
+// ContinueText resumes a main agent whose last work turn failed on quota.
 const ContinueText = "Continue."
+
+// ParentLabel is the label Paseo puts on an agent another agent created.
+const ParentLabel = "paseo.parent-agent-id"
+
+// ParentOf is the agent that created the one whose stored record this is
+// (its parentAgentId, else the parent label); "" for a main agent.
+func ParentOf(record *Object) string {
+	if record == nil {
+		return ""
+	}
+	if s, ok := record.String("parentAgentId"); ok && s != "" {
+		return s
+	}
+	if labels, ok := record.Object("labels"); ok {
+		s, _ := labels.String(ParentLabel)
+		return s
+	}
+	return ""
+}
+
+// ResumeText resumes an agent whose last work turn failed on quota. A
+// subagent asks its parent before going on: while it was stopped, the parent
+// may have handed its task to a replacement, done it itself or changed
+// plans, and a child that simply continued would duplicate or undo that.
+func ResumeText(parent string) string {
+	if parent == "" {
+		return ContinueText
+	}
+	return "Continue: your usage limit has reset, and agent-quotas resumed the turn it stopped. " +
+		"Your parent agent (" + parent + ") may have moved on while you were stopped: given your task " +
+		"to another agent, done it itself, or changed its plan. Before doing more, re-coordinate: " +
+		"message it (paseo send " + parent + ", or the send_agent_prompt tool) with where you stopped " +
+		"and what you would do next, ask whether to go on, then end your turn and wait for its answer. " +
+		"If it no longer needs this work, stop without further changes. If your work was already " +
+		"complete, tell it so instead."
+}
 
 // Paseo is the access to the Paseo daemon the engine needs.
 type Paseo interface {

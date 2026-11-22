@@ -399,8 +399,14 @@ The live check retains the following guarantees:
 8. Re-inspect and re-read the stored record; if anything changed (status,
    permission, binding, failure identity), skip.
 9. Record `claimed_failure` (atomic write, fsync) **before** sending.
-10. `paseo send <id> Continue. --behavior <PASEO_SEND_BEHAVIOR|steer> --home <home> --no-wait --json`
-    with Paseo marker variables removed from the environment.
+10. `paseo send <id> <prompt> --behavior <PASEO_SEND_BEHAVIOR|steer> --home <home> --no-wait --json`,
+    with Paseo marker variables removed from the environment. The prompt is
+    `Continue.` for a main agent. A subagent (its record has
+    `parentAgentId` or the `paseo.parent-agent-id` label) is told to
+    re-coordinate first: message its parent with where it stopped and what it
+    would do next, then wait for the answer. While it was stopped, the parent
+    may have given its task to a replacement, done it itself or changed plans,
+    and a child that simply continued would duplicate or undo that work.
 11. A failed or timed-out send disables the registration
     (`send uncertain; inspect agent and re-arm explicitly`).
 

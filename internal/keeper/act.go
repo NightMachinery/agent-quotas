@@ -562,9 +562,6 @@ func scanTimeline(items []*paseo.Object) (completed, canceled bool) {
 	return completed, canceled
 }
 
-// parentLabel is the label Paseo sets on an agent another agent created.
-const parentLabel = "paseo.parent-agent-id"
-
 // applyDefault considers recently active main agents once for each default.
 func (k *Keeper) applyDefault(ctx context.Context, home string, list []*paseo.Object) {
 	policy := k.Config.Keeper.DefaultPolicy

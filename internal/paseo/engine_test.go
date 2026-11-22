@@ -171,6 +171,28 @@ func (h *harness) tick() string {
 	return status
 }
 
+// A subagent is resumed with a prompt that sends it to its parent first,
+// found by parentAgentId or by the label Paseo puts on agent-made agents.
+func TestQuotaRecoveryAsksSubagentToRecoordinate(t *testing.T) {
+	for _, extra := range []*Object{
+		Obj("parentAgentId", "parent-id"),
+		Obj("labels", Obj(ParentLabel, "parent-id")),
+	} {
+		h := newHarness(t)
+		for _, k := range extra.Keys() {
+			h.record.Set(k, extra.Value(k))
+		}
+		if s := h.tick(); !strings.Contains(s, "sent") {
+			t.Fatal(s)
+		}
+		text := h.paseo.sent[0].text
+		if !strings.HasPrefix(text, "Continue: ") || !strings.Contains(text, "paseo send parent-id") ||
+			!strings.Contains(text, "wait for its answer") {
+			t.Fatalf("subagent prompt: %q", text)
+		}
+	}
+}
+
 func TestQuotaRecoverySendsToExactAgentAndHome(t *testing.T) {
 	h := newHarness(t)
 	if s := h.tick(); !strings.Contains(s, "sent") {

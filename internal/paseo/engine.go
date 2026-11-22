@@ -1,6 +1,6 @@
 // Package paseo is the Paseo auto-continue engine, a port of the old
 // paseo_auto_continue.py: registrations of Paseo agents that stopped on a
-// usage limit, and the tick that sends one "Continue." after that agent's own
+// usage limit, and the tick that sends one resume prompt after that agent's own
 // account has quota again. See docs/design.md, "Paseo engine".
 //
 // Registration files, their locks and the failure digests are byte
@@ -505,7 +505,7 @@ func (e *Engine) tick(ctx context.Context, path string, batch *PollListing) (str
 			if e.Config != nil {
 				behavior = e.Config.Paseo.SendBehavior
 			}
-			if err := e.Paseo.Send(ctx, agentID, home, ContinueText, SendBehavior(behavior, e.getenv)); err != nil {
+			if err := e.Paseo.Send(ctx, agentID, home, ResumeText(ParentOf(record)), SendBehavior(behavior, e.getenv)); err != nil {
 				// A timeout can mean Paseo accepted the send. Never retry
 				// that failed turn automatically; explicit re-arm clears it.
 				state.Set("enabled", false)
