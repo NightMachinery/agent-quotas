@@ -123,7 +123,7 @@ type Keeper struct {
 	// DefaultPolicy is applied once to recently active main agents (not
 	// subagents) without a decided policy: off (default), compact or warm.
 	DefaultPolicy string `json:"default_policy,omitempty"`
-	// TTLSeconds is the prompt-cache lifetime per provider (claude, codex).
+	// TTLSeconds is the prompt-cache lifetime per provider (claude, codex, agy).
 	TTLSeconds               map[string]int `json:"ttl_seconds,omitempty"`
 	LeadSeconds              int            `json:"lead_seconds,omitempty"`
 	QuietSeconds             int            `json:"quiet_seconds,omitempty"`
@@ -334,7 +334,9 @@ func (c *Config) applyDefaults() {
 	if k.DefaultPolicy == "" {
 		k.DefaultPolicy = "off"
 	}
-	ttl := map[string]int{"claude": 3600, "codex": 1800}
+	// agy: Gemini's cache is best effort; about half of the calls after a
+	// pause of 5 to 60 minutes still hit it, almost none after an hour.
+	ttl := map[string]int{"claude": 3600, "codex": 1800, "agy": 3600}
 	for p, v := range k.TTLSeconds {
 		ttl[p] = v
 	}

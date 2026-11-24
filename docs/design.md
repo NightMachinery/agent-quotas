@@ -545,20 +545,27 @@ Terms:
   a successful ping's send time, or a completed compaction, whichever is
   latest. Keeper pings and their replies count here, not as real activity.
 - **TTL**: the provider's prompt-cache lifetime, from config
-  (`keeper.ttl_seconds`, default `{"claude": 3600, "codex": 1800}`), with one
+  (`keeper.ttl_seconds`, default `{"claude": 3600, "codex": 1800, "agy": 3600}`), with one
   exception: a Claude seat on **overage** (an account-wide window is at 100%
   while `extra_usage` is enabled and its spend limit is not reached) uses 300 s,
   Claude's cache lifetime on extra usage. Exposed as `ttl_reason: config|overage`.
   The 1 h Claude TTL for subscription seats is an assumption (Claude Code
   requests the 1 h cache on subscriptions); change `ttl_seconds` if that stops
-  holding. Overage is informational in practice: an overage seat's verdict is
+  holding. Gemini's cache under agy is best effort: measured on agy
+  transcripts, nearly every model call within 5 minutes of the previous one
+  read the context from cache, about half after a 5 to 60 minute pause, and
+  almost none after an hour. So `agy` uses 1 h for timing compaction, and the
+  keeper refuses `warm` for agy agents: a ping is a full turn on the account's
+  quota and would not keep that cache. Overage is informational in practice: an overage seat's verdict is
   `blocked`, so the keeper does not send to it.
 - **cache expiry**: cache activity + TTL.
 - **lead**: how long before expiry the keeper acts (`keeper.lead_seconds`,
   default 300).
 - **big**: the context, read from the transcript (Claude: the last real model
   call's `input_tokens + cache_creation_input_tokens + cache_read_input_tokens`;
-  Codex: the last `token_count`'s `last_token_usage.input_tokens`), is at least
+  Codex: the last `token_count`'s `last_token_usage.input_tokens`; agy: the
+  last `PLANNER_RESPONSE`'s `input_tokens + cache_read_tokens` in
+  `brain/<session>/.system_generated/logs/transcript_full.jsonl`), is at least
   `min_context_tokens` from `~/.compaction.yaml` (default 128000 when the file
   or key is absent). Unknown (no transcript, or a compaction since the last
   model call) means not big.
@@ -701,8 +708,10 @@ Setting `warm` again leaves standby and starts a new ceiling from that moment.
 
 - `queued`: requested, waiting until the agent is sendable.
 - `sent`: recorded before `/compact` is sent (at most one send per request).
-- `completed`: Paseo's timeline (`paseo logs --json --since <sent_at>`) shows
-  a `compaction` item with status `completed` and the agent is idle again.
+- `completed`: the agent is idle again and Paseo's timeline (`paseo logs
+  --json --since <sent_at>`) shows a `compaction` item with status
+  `completed`, or the transcript has a compaction since `sent_at` (agy writes
+  only a `CHECKPOINT` entry; Paseo's ACP timeline shows nothing).
 - `failed`: the send failed (`error`: the CLI's error), or no completion within
   `keeper.compaction_timeout_seconds` (1200) of `sent_at` (`error:
   "timeout"`), or the agent was archived (`error: "archived"`).
@@ -757,6 +766,12 @@ Read (answered with the keeper disabled too, always from memory; see
 
 `observed_at` is when the data behind the document was read (null for an
 agent known only from a registration or a listing and not observed yet).
+
+`seat` is the account's verdict for Claude and Codex agents. For an
+Antigravity agent (`agy:<account>`) it is the verdict for the agent's model,
+by `agy-best`'s rule, and a blocked one carries `available_at`, the latest
+reset among that model's empty pools; the account's own verdict can be usable
+while a Gemini pool is empty, because the Claude/GPT pools still have room.
 
 `cache_expires_at` is the keeper's estimate. The desk's cold-cache dialog can
 show "idle longer than the TTL and big" from `cache_expires_at < now && big`.

@@ -234,7 +234,7 @@ func (k *Keeper) lockedState(snap *paseo.Object, id, home string, create bool) (
 	binding, berr := k.Engine.Binding(snap, home)
 	if berr != nil {
 		unlock()
-		return "", nil, nil, fmt.Errorf("%w: the keeper supports agents on Claude or Codex seats (%v)", ErrBadRequest, berr)
+		return "", nil, nil, fmt.Errorf("%w: the keeper supports agents on Claude, Codex or Antigravity seats (%v)", ErrBadRequest, berr)
 	}
 	if state == nil {
 		state = paseo.Obj("version", 1, "enabled", false, "home", home, "agent_id", id,
@@ -243,6 +243,14 @@ func (k *Keeper) lockedState(snap *paseo.Object, id, home string, create bool) (
 	state.Set("binding", binding)
 	return path, state, unlock, nil
 }
+
+// agyWarmRefusal is why Antigravity agents get no warm policy. Measured on
+// agy transcripts: nearly every model call within 5 minutes of the previous
+// one reads the context from Gemini's cache, about half after a 5 to 60
+// minute pause, almost none after an hour. A keepalive ping is a full turn
+// on the account's quota, so pings would spend quota on a cache they cannot
+// hold; compaction is what makes a later restart cheap.
+const agyWarmRefusal = "Gemini's prompt cache is best effort (about half of the calls after a 5 to 60 minute pause still hit it, almost none after an hour), so keepalive pings would spend quota without keeping it warm; use compact"
 
 func validSetBy(s string, internal bool) (string, error) {
 	switch s {
@@ -292,6 +300,11 @@ func (k *Keeper) setPolicy(ctx context.Context, id, home, policy string, warmHou
 	snap, err := k.knownAgent(ctx, id, home)
 	if err != nil {
 		return View{}, err
+	}
+	if policy == PolicyWarm {
+		if b, err := k.Engine.Binding(snap, home); err == nil && paseo.IdentityOf(b).Agent == paseo.AgentAgy {
+			return View{}, fmt.Errorf("%w: %s", ErrBadRequest, agyWarmRefusal)
+		}
 	}
 	create := policy != PolicyOff || standby
 	path, state, unlock, err := k.lockedState(snap, id, home, create)

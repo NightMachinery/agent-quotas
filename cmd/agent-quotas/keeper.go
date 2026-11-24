@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/NightMachinery/agent-quotas/internal/agy"
 	"github.com/NightMachinery/agent-quotas/internal/client"
 	"github.com/NightMachinery/agent-quotas/internal/config"
 	"github.com/NightMachinery/agent-quotas/internal/daemon"
@@ -24,8 +25,10 @@ type keeperSeats struct {
 	snap func(ctx context.Context, id string) (model.Snapshot, error)
 }
 
-// Seat implements keeper.Seats.
-func (s keeperSeats) Seat(ctx context.Context, id paseo.Identity) (keeper.Seat, error) {
+// Seat implements keeper.Seats. An Antigravity seat's verdict is the
+// model's (agy-best's rule over its pools), with the time its empty pools
+// reset; Claude and Codex seats give the account's verdict.
+func (s keeperSeats) Seat(ctx context.Context, id paseo.Identity, modelID string) (keeper.Seat, error) {
 	var account string
 	switch id.Agent {
 	case model.Claude:
@@ -36,6 +39,24 @@ func (s keeperSeats) Seat(ctx context.Context, id paseo.Identity) (keeper.Seat, 
 			return keeper.Seat{}, err
 		}
 		account = a
+	case paseo.AgentAgy:
+		account = model.ID(model.Agy, id.Profile)
+		snap, err := s.snap(ctx, account)
+		if err != nil {
+			return keeper.Seat{Account: account, Verdict: model.Unknown}, nil
+		}
+		usable, resetAt, err := agy.ModelSeat(snap, modelID)
+		switch {
+		case err != nil:
+			return keeper.Seat{Account: account, Verdict: model.Unknown}, nil
+		case usable:
+			return keeper.Seat{Account: account, Verdict: model.Usable}, nil
+		}
+		seat := keeper.Seat{Account: account, Verdict: model.Blocked}
+		if resetAt > 0 {
+			seat.AvailableAt = &resetAt
+		}
+		return seat, nil
 	default:
 		return keeper.Seat{}, fmt.Errorf("no seat for agent kind %q", id.Agent)
 	}

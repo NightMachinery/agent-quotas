@@ -515,6 +515,12 @@ func (k *Keeper) progress(ctx context.Context, o *obs, batch *paseo.PollListing)
 		}
 	}
 	if status == "idle" || status == "closed" {
+		// agy records a compaction only in its transcript (a CHECKPOINT,
+		// whose time has whole seconds); Paseo's timeline shows nothing.
+		if o.act.CompactedAt > 0 && o.act.CompactedAt >= comp.SentAt-2 {
+			k.finish(o.path, comp.ID, StateCompleted, "")
+			return nil
+		}
 		lctx, cancel := context.WithTimeout(ctx, observeTimeout)
 		items, logErr := k.Paseo.Logs(lctx, o.agentID, o.home, model.Time(comp.SentAt-2))
 		cancel()
@@ -571,6 +577,9 @@ func (k *Keeper) applyDefault(ctx context.Context, home string, list []*paseo.Ob
 		return
 	}
 	wantsCache := func(o *obs) bool {
+		if policy == PolicyWarm && o.ident.Agent == paseo.AgentAgy {
+			return false // refused for agy (agyWarmRefusal)
+		}
 		return cacheDefault && (o.cache == nil || o.cache.SetAt <= 0)
 	}
 	wantsAuto := func(o *obs) bool {

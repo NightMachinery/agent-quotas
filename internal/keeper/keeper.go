@@ -91,16 +91,21 @@ type Paseo interface {
 	List(ctx context.Context, home string) ([]*paseo.Object, error)
 }
 
-// Seat is the quota seat an agent runs on.
+// Seat is the quota seat an agent runs on. AvailableAt (Unix seconds) is
+// when a seat blocked for the agent's model has room again, where the seat
+// knows it per model (Antigravity pools); otherwise the account's
+// blocked_until applies.
 type Seat struct {
-	Account string `json:"account"`
-	Verdict string `json:"verdict"`
-	Overage bool   `json:"overage"`
+	Account     string   `json:"account"`
+	Verdict     string   `json:"verdict"`
+	Overage     bool     `json:"overage"`
+	AvailableAt *float64 `json:"available_at,omitempty"`
 }
 
-// Seats resolves an agent's identity to its seat, from the daemon's store.
+// Seats resolves an agent's identity, and the model it runs, to its seat,
+// from the daemon's store.
 type Seats interface {
-	Seat(ctx context.Context, id paseo.Identity) (Seat, error)
+	Seat(ctx context.Context, id paseo.Identity, model string) (Seat, error)
 }
 
 // Ping is the last keepalive ping.
@@ -385,7 +390,11 @@ func (k *Keeper) observeWith(ctx context.Context, agentID, home string, inspect 
 		o.act, _ = k.Engine.Activity(o.record, o.ident)
 	}
 	if o.identOK && k.Seats != nil {
-		if s, err := k.Seats.Seat(ctx, o.ident); err == nil {
+		model := paseo.ModelOf(o.record)
+		if model == "" && o.inspect != nil {
+			model, _ = o.inspect.String("Model")
+		}
+		if s, err := k.Seats.Seat(ctx, o.ident, model); err == nil {
 			o.seat = &s
 		}
 	}

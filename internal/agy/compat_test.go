@@ -112,6 +112,28 @@ func TestUsableFor(t *testing.T) {
 	}
 }
 
+// A model is blocked while any of its pools is empty, until the latest of
+// their resets; the other family's pools do not count.
+func TestModelSeat(t *testing.T) {
+	snap := model.Snapshot{ID: "agy:m", Native: json.RawMessage(`{"buckets":[
+		{"bucket_id":"gemini-weekly","remaining_percent":15,"resets_at":2000000900},
+		{"bucket_id":"gemini-5h","remaining_percent":0,"resets_at":2000000100},
+		{"bucket_id":"3p-5h","remaining_percent":0,"resets_at":2000000500}]}`)}
+	usable, at, err := ModelSeat(snap, "gemini-4-neon-high")
+	if err != nil || usable || at != 2000000100 {
+		t.Fatalf("gemini: %v %v %v", usable, at, err)
+	}
+	snap.Native = json.RawMessage(`{"buckets":[{"bucket_id":"gemini-weekly","remaining_percent":0,"resets_at":2000000900},
+		{"bucket_id":"gemini-5h","remaining_percent":0,"resets_at":2000000100}]}`)
+	if _, at, _ := ModelSeat(snap, "gemini-4-neon-high"); at != 2000000900 {
+		t.Fatalf("latest reset: %v", at)
+	}
+	snap.Native = json.RawMessage(`{"buckets":[{"bucket_id":"gemini-5h","remaining_percent":40}]}`)
+	if usable, at, err := ModelSeat(snap, "gemini-4-neon-high"); !usable || at != 0 || err != nil {
+		t.Fatalf("usable: %v %v %v", usable, at, err)
+	}
+}
+
 // The human agy-status report renders the readers' Native rows, with the
 // cache age read from each account's cache.
 func TestHumanReportFromSnapshots(t *testing.T) {

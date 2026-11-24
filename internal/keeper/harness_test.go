@@ -127,7 +127,7 @@ func (f *fakePaseo) sends() []sentMsg {
 
 type fakeSeats struct{ seat Seat }
 
-func (s *fakeSeats) Seat(context.Context, paseo.Identity) (Seat, error) { return s.seat, nil }
+func (s *fakeSeats) Seat(context.Context, paseo.Identity, string) (Seat, error) { return s.seat, nil }
 
 type harness struct {
 	t      *testing.T
