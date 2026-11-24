@@ -7,6 +7,7 @@ import (
 	"math"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/NightMachinery/agent-quotas/internal/model"
 )
@@ -121,8 +122,15 @@ func QuotaForModel(buckets []json.RawMessage, modelID string) (float64, []string
 	return remaining, ids, nil
 }
 
-// ModelSeat is UsableFor plus when a blocked model has room again: the
-// latest reset among its empty pools (0 when a report does not say).
+// now is the clock of ModelSeat and UsableFor; tests replace it.
+var now = time.Now
+
+// ModelSeat is agy-best's rule for one model, with when a blocked model has
+// room again: the latest reset among its empty pools (0 when a report does
+// not say). An empty pool whose reset has passed does not block: the reading
+// predates its new window, as for the snapshot's windows. Only agy's own
+// runs refresh the reading, so with every agent of the account stopped this
+// is the only way to see the quota come back.
 func ModelSeat(s model.Snapshot, modelID string) (usable bool, resetAt float64, err error) {
 	buckets, err := accountBuckets(s)
 	if err != nil {
@@ -132,9 +140,10 @@ func ModelSeat(s model.Snapshot, modelID string) (usable bool, resetAt float64, 
 	if err != nil {
 		return false, 0, err
 	}
+	nowS := float64(now().UnixNano()) / 1e9
 	usable = true
 	for _, p := range pools {
-		if p.remaining <= 0 {
+		if p.remaining <= 0 && (p.resetsAt <= 0 || p.resetsAt > nowS) {
 			usable = false
 			resetAt = math.Max(resetAt, p.resetsAt)
 		}
@@ -143,18 +152,12 @@ func ModelSeat(s model.Snapshot, modelID string) (usable bool, resetAt float64, 
 }
 
 // UsableFor applies agy-best's rule to one account: the model is usable
-// when every applicable pool has quota left. An account with an error, that
-// is signed out, or that has no report is an error, never "usable".
+// when every applicable pool has quota left or has reset since the reading
+// (see ModelSeat). An account with an error, that is signed out, or that has
+// no report is an error, never "usable".
 func UsableFor(s model.Snapshot, modelID string) (bool, error) {
-	buckets, err := accountBuckets(s)
-	if err != nil {
-		return false, err
-	}
-	remaining, _, err := QuotaForModel(buckets, modelID)
-	if err != nil {
-		return false, err
-	}
-	return remaining > 0, nil
+	usable, _, err := ModelSeat(s, modelID)
+	return usable, err
 }
 
 // accountBuckets is the bucket list of a signed-in account's report; an

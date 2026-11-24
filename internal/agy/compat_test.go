@@ -132,6 +132,18 @@ func TestModelSeat(t *testing.T) {
 	if usable, at, err := ModelSeat(snap, "gemini-4-neon-high"); !usable || at != 0 || err != nil {
 		t.Fatalf("usable: %v %v %v", usable, at, err)
 	}
+	// Once its reset has passed, an empty pool in an old reading no longer
+	// blocks: nothing refreshes the reading while the account's agents wait.
+	snap.Native = json.RawMessage(`{"buckets":[{"bucket_id":"gemini-weekly","remaining_percent":15,"resets_at":2000000900},
+		{"bucket_id":"gemini-5h","remaining_percent":0,"resets_at":2000000100}]}`)
+	defer func(old func() time.Time) { now = old }(now)
+	now = func() time.Time { return time.Unix(2000000101, 0) }
+	if usable, _, err := ModelSeat(snap, "gemini-4-neon-high"); !usable || err != nil {
+		t.Fatalf("after the reset: %v %v", usable, err)
+	}
+	if ok, _ := UsableFor(snap, "gemini-4-neon-high"); !ok {
+		t.Fatal("UsableFor after the reset")
+	}
 }
 
 // The human agy-status report renders the readers' Native rows, with the

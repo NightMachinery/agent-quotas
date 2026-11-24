@@ -211,7 +211,10 @@ Verdict rules, one per provider, ported unchanged:
 - **Antigravity**: per model pool. The account verdict is `blocked` only when
   every general pool (`gemini-*`, `3p-*`) is at 0% remaining; `UsableFor(model)`
   applies `agy-best`'s rule (every applicable pool, general and model-specific,
-  has room). A missing or too-old cache gives `unknown`.
+  has room). An empty pool whose reset time has passed counts as having room,
+  as it stops blocking in the windows: only agy's own runs refresh the
+  reading, so while every agent of the account waits on that pool, nothing
+  else would show it come back. A missing or too-old cache gives `unknown`.
 
 ## Polling and back-off
 
