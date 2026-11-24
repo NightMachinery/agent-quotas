@@ -7,6 +7,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -360,5 +361,80 @@ func TestCacheReadsNeverOpenTheToken(t *testing.T) {
 	}
 	if a.SignedIn() {
 		t.Error("an empty token file is not signed in")
+	}
+}
+
+// keychainAgy answers the keychain lookup with exit; anything else is agy.
+type keychainAgy struct {
+	fakeAgy
+	keychain int
+}
+
+func (k *keychainAgy) Run(ctx context.Context, c procx.Cmd) (procx.Result, error) {
+	if len(c.Argv) > 0 && c.Argv[0] == keychainArgv[0] {
+		k.mu.Lock()
+		k.calls = append(k.calls, c)
+		k.mu.Unlock()
+		if strings.Contains(strings.Join(c.Argv, " "), " -w") || strings.Contains(strings.Join(c.Argv, " "), " -g") {
+			return procx.Result{ExitCode: 1}, errors.New("the keychain lookup must never ask for the secret")
+		}
+		if k.keychain != 0 {
+			return procx.Result{ExitCode: k.keychain}, errors.New("security: exit status 44")
+		}
+		return procx.Result{}, nil
+	}
+	return k.fakeAgy.Run(ctx, c)
+}
+
+// agy signs account m in from the keychain when it has no token file, so
+// for the account in the default ~/.gemini a keychain item is a sign-in.
+func TestKeychainSignInCountsForTheDefaultRoot(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("the keychain is macOS only")
+	}
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	usage, err := os.ReadFile(filepath.Join("testdata", "usage.txt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	maxAge := -1
+	cfg := &config.Config{Agy: config.Agy{
+		Accounts: []config.AgyAccount{
+			{Name: "m", CacheFile: filepath.Join(home, "main-cache.json")},
+			{Name: "fm2", GeminiDir: filepath.Join(home, "accounts", "fm2")},
+		},
+		StatuslineMaxAgeS: &maxAge, MinIntervalS: 60, SlowFallbackS: 60, TimeoutS: 90, Binary: "agy",
+	}}
+	for _, c := range cfg.Agy.Accounts {
+		if err := os.MkdirAll(ResolveAccount(c).CLIDir(), 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if a := ResolveAccount(cfg.Agy.Accounts[0]); !a.Keychain {
+		t.Fatalf("m in ~/.gemini should use the keychain: %+v", a)
+	}
+	if a := ResolveAccount(cfg.Agy.Accounts[1]); a.Keychain {
+		t.Fatalf("an account in its own root must not: %+v", a)
+	}
+	fake := &keychainAgy{fakeAgy: fakeAgy{out: usage}}
+	r := NewReader(cfg, fake)
+	r.Location = time.UTC
+	ctx := context.Background()
+
+	snap, err := r.Read(ctx, ref("m"), at(9000))
+	// No cache here, so the live check runs and verifies the sign-in.
+	if err != nil || !strings.Contains(string(snap.Native), `"signed_in":true`) || fake.calls[0].Argv[0] != keychainArgv[0] {
+		t.Fatalf("keychain sign-in: %v %s", err, snap.Native)
+	}
+	fake.keychain = 44
+	snap, _ = r.Read(ctx, ref("m"), at(9100))
+	if !strings.Contains(string(snap.Native), "Not signed in; run agy-acc-login m") {
+		t.Fatalf("no keychain item, no file: %s", snap.Native)
+	}
+	fake.keychain = 0
+	snap, _ = r.Read(ctx, ref("fm2"), at(9200))
+	if !strings.Contains(string(snap.Native), "Not signed in; run agy-acc-login fm2") {
+		t.Fatalf("fm2 must not borrow the keychain sign-in: %s", snap.Native)
 	}
 }

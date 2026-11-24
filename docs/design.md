@@ -236,6 +236,16 @@ slow path (`agy -p /usage`, 2 to 15 s, a full CLI start-up) is never scheduled;
 it runs only on a forced refresh of that account or when the cache has nothing
 for it and the account is signed in, at most once per `min_interval`.
 
+An Antigravity account is signed in when its
+`antigravity-cli/antigravity-oauth-token` is a non-empty file. On macOS, the
+account in the default `~/.gemini` (normally `m`) also counts as signed in
+when agy's keychain item exists. agy 1.5 tries the token file first and then
+the keychain, even in file mode, so m keeps working after a keychain-mode run
+has removed its file. The check runs `security find-generic-password -s gemini
+-a antigravity` without `-w` or `-g`, so it never reads the secret. The item
+is one per macOS user, not one per Gemini root, so other accounts ignore it.
+Neither check opens a credential.
+
 Codex starts `codex app-server` per auth snapshot and asks for rate limits over
 JSON-RPC, as `codex_status.py` does, including the refresh-token recovery from
 `auth_backup_dir`. Account discovery (which `auth_<alias>.json` files exist,

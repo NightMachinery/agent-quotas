@@ -12,6 +12,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -28,6 +29,9 @@ type Account struct {
 	Label     string
 	GeminiDir string // absolute
 	CacheFile string // the statusline cache
+	// Keychain: the account lives in the default ~/.gemini on macOS, so
+	// agy's keychain sign-in is its own (see KeychainSignedIn).
+	Keychain bool
 }
 
 // CLIDir is the account's antigravity-cli directory.
@@ -41,6 +45,25 @@ func (a Account) TokenFile() string { return filepath.Join(a.CLIDir(), "antigrav
 func (a Account) SignedIn() bool {
 	st, err := os.Stat(a.TokenFile())
 	return err == nil && st.Mode().IsRegular() && st.Size() > 0
+}
+
+// keychainArgv asks whether agy's macOS keychain sign-in exists. Without -g
+// or -w, security prints only the item's attributes, never the secret; it
+// exits 44 when there is no such item.
+var keychainArgv = []string{"/usr/bin/security", "find-generic-password", "-s", "gemini", "-a", "antigravity"}
+
+// KeychainSignedIn reports whether a's sign-in is in the macOS keychain.
+// agy (1.5 and later) authenticates through a chain: the token file, then
+// the keychain, even when told to store tokens in the file. A run without
+// file mode keeps account m's token only in the keychain, and then m works
+// with no token file at all. The keychain item is one per user, not per
+// Gemini root, so it counts only for the account in the default root.
+func (r *Reader) KeychainSignedIn(ctx context.Context, a Account) bool {
+	if !a.Keychain {
+		return false
+	}
+	res, err := r.run.Run(ctx, procx.Cmd{Argv: keychainArgv, Timeout: 5 * time.Second})
+	return err == nil && res.ExitCode == 0
 }
 
 // main reports whether name is the account that keeps the original
@@ -71,6 +94,13 @@ func ResolveAccount(c config.AgyAccount) Account {
 		dir = real
 	}
 	a.GeminiDir = dir
+	if runtime.GOOS == "darwin" {
+		def := filepath.Join(config.Home(), ".gemini")
+		if real, err := filepath.EvalSymlinks(def); err == nil {
+			def = real
+		}
+		a.Keychain = dir == def
+	}
 	switch {
 	case c.CacheFile != "":
 		a.CacheFile = config.Expand(c.CacheFile)
@@ -179,7 +209,7 @@ type LegacyAccount struct {
 	Account    string          `json:"account"`
 	Label      string          `json:"label"`
 	SignedIn   *bool           `json:"signed_in"`
-	AuthStatus string          `json:"auth_status"` // missing, file-present, verified
+	AuthStatus string          `json:"auth_status"` // missing, file-present, keychain, verified
 	Tier       json.RawMessage `json:"tier"`
 	Email      json.RawMessage `json:"email"`
 	Message    *string         `json:"message"`
@@ -214,16 +244,22 @@ func (r *Reader) Read(ctx context.Context, ref model.AccountRef, opts model.Read
 	legacy.Tier = metaValue(meta, "tier")
 	legacy.Email = metaValue(meta, "email")
 
-	if !a.SignedIn() {
+	stored := "file credentials exist"
+	switch {
+	case a.SignedIn():
+		legacy.AuthStatus = "file-present"
+	case r.KeychainSignedIn(ctx, a):
+		legacy.AuthStatus = "keychain"
+		stored = "a keychain sign-in exists"
+	default:
 		legacy.AuthStatus = "missing"
 		legacy.SignedIn = model.B(false)
 		legacy.Message = model.S("Not signed in; run agy-acc-login " + a.Name)
 		return r.snapshot(a, legacy, readResult{source: "statusline"}, now), nil
 	}
-	legacy.AuthStatus = "file-present"
 	res := r.quota(ctx, a, opts.Force, now)
 	if res.err != nil {
-		legacy.Error = model.S(fmt.Sprintf("Quota check failed (exit %d); file credentials exist, validity unverified", res.exit))
+		legacy.Error = model.S(fmt.Sprintf("Quota check failed (exit %d); %s, validity unverified", res.exit, stored))
 		return r.snapshot(a, legacy, res, now), res.err
 	}
 	legacy.Buckets = res.rows
