@@ -96,3 +96,50 @@ func cmdAgyStatus(ctx context.Context, args []string) int {
 	}
 	return agy.ExitCode(rows)
 }
+
+// ---- agy-auth ----
+
+// cmdAgyAuth prints where an account's sign-in is stored (file-present,
+// keychain or missing) and exits 0 when it is stored, 1 when it is not. It
+// reads only local state, needs no daemon and never opens a credential. The
+// shell's agy helpers call it with --dir, the root they resolved themselves,
+// so the sign-in rule (agy.StoredAuth) is written only once.
+func cmdAgyAuth(ctx context.Context, args []string) int {
+	fs := newFlags("agy-auth")
+	dir := fs.String("dir", "", "the account's Gemini root, instead of a configured ACCOUNT")
+	pos, err := parseInterspersed(fs, args)
+	if err != nil {
+		return exitUsage
+	}
+	var a agy.Account
+	switch {
+	case *dir != "" && len(pos) == 0:
+		a = agy.ResolveAccount(config.AgyAccount{GeminiDir: *dir})
+	case *dir == "" && len(pos) == 1:
+		cfg, err := loadConfig()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "agent-quotas: config: %v\n", err)
+			return exitFail
+		}
+		found := false
+		for _, c := range cfg.Agy.Accounts {
+			if c.Name == pos[0] {
+				a, found = agy.ResolveAccount(c), true
+				break
+			}
+		}
+		if !found {
+			fmt.Fprintf(os.Stderr, "agent-quotas agy-auth: no agy account %q in the config\n", pos[0])
+			return exitUsage
+		}
+	default:
+		fmt.Fprintln(os.Stderr, "usage: agent-quotas agy-auth ACCOUNT | --dir GEMINI_ROOT")
+		return exitUsage
+	}
+	kind := agy.StoredAuth(ctx, procx.Exec{}, a)
+	fmt.Println(kind)
+	if kind == agy.AuthMissing {
+		return exitFail
+	}
+	return exitOK
+}

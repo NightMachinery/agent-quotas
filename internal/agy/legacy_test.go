@@ -437,4 +437,21 @@ func TestKeychainSignInCountsForTheDefaultRoot(t *testing.T) {
 	if !strings.Contains(string(snap.Native), "Not signed in; run agy-acc-login fm2") {
 		t.Fatalf("fm2 must not borrow the keychain sign-in: %s", snap.Native)
 	}
+
+	// StoredAuth, which agy-auth prints for the shell: the file wins without
+	// asking the keychain, and fm2 never asks it.
+	m, fm2 := ResolveAccount(cfg.Agy.Accounts[0]), ResolveAccount(cfg.Agy.Accounts[1])
+	if got := StoredAuth(ctx, fake, m); got != AuthKeychain {
+		t.Fatalf("m with only a keychain item: %s", got)
+	}
+	if got := StoredAuth(ctx, fake, fm2); got != AuthMissing {
+		t.Fatalf("fm2 with nothing: %s", got)
+	}
+	if err := os.WriteFile(fm2.TokenFile(), []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	fake.calls = nil
+	if got := StoredAuth(ctx, fake, fm2); got != AuthFile || len(fake.calls) != 0 {
+		t.Fatalf("fm2 with a token file: %s, %d calls", got, len(fake.calls))
+	}
 }

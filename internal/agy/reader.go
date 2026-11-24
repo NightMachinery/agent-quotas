@@ -30,7 +30,7 @@ type Account struct {
 	GeminiDir string // absolute
 	CacheFile string // the statusline cache
 	// Keychain: the account lives in the default ~/.gemini on macOS, so
-	// agy's keychain sign-in is its own (see KeychainSignedIn).
+	// agy's keychain sign-in is its own (see StoredAuth).
 	Keychain bool
 }
 
@@ -52,18 +52,33 @@ func (a Account) SignedIn() bool {
 // exits 44 when there is no such item.
 var keychainArgv = []string{"/usr/bin/security", "find-generic-password", "-s", "gemini", "-a", "antigravity"}
 
-// KeychainSignedIn reports whether a's sign-in is in the macOS keychain.
-// agy (1.5 and later) authenticates through a chain: the token file, then
-// the keychain, even when told to store tokens in the file. A run without
-// file mode keeps account m's token only in the keychain, and then m works
-// with no token file at all. The keychain item is one per user, not per
-// Gemini root, so it counts only for the account in the default root.
-func (r *Reader) KeychainSignedIn(ctx context.Context, a Account) bool {
-	if !a.Keychain {
-		return false
+// Where an account's sign-in is stored, as auth_status names it before a
+// read proves the sign-in works ("verified").
+const (
+	AuthFile     = "file-present"
+	AuthKeychain = "keychain"
+	AuthMissing  = "missing"
+)
+
+// StoredAuth says where a's sign-in is stored, without opening it: the token
+// file, the macOS keychain, or nowhere. agy (1.5 and later) authenticates
+// through a chain: the token file, then the keychain, even when told to
+// store tokens in the file. A run without file mode keeps account m's token
+// only in the keychain, and then m works with no token file at all. The
+// keychain item is one per user, not per Gemini root, so it counts only for
+// the account in the default root. `agent-quotas agy-auth` hands this answer
+// to the shell, so the rule lives only here.
+func StoredAuth(ctx context.Context, run procx.Runner, a Account) string {
+	if a.SignedIn() {
+		return AuthFile
 	}
-	res, err := r.run.Run(ctx, procx.Cmd{Argv: keychainArgv, Timeout: 5 * time.Second})
-	return err == nil && res.ExitCode == 0
+	if a.Keychain {
+		res, err := run.Run(ctx, procx.Cmd{Argv: keychainArgv, Timeout: 5 * time.Second})
+		if err == nil && res.ExitCode == 0 {
+			return AuthKeychain
+		}
+	}
+	return AuthMissing
 }
 
 // main reports whether name is the account that keeps the original
@@ -245,14 +260,10 @@ func (r *Reader) Read(ctx context.Context, ref model.AccountRef, opts model.Read
 	legacy.Email = metaValue(meta, "email")
 
 	stored := "file credentials exist"
-	switch {
-	case a.SignedIn():
-		legacy.AuthStatus = "file-present"
-	case r.KeychainSignedIn(ctx, a):
-		legacy.AuthStatus = "keychain"
+	switch legacy.AuthStatus = StoredAuth(ctx, r.run, a); legacy.AuthStatus {
+	case AuthKeychain:
 		stored = "a keychain sign-in exists"
-	default:
-		legacy.AuthStatus = "missing"
+	case AuthMissing:
 		legacy.SignedIn = model.B(false)
 		legacy.Message = model.S("Not signed in; run agy-acc-login " + a.Name)
 		return r.snapshot(a, legacy, readResult{source: "statusline"}, now), nil

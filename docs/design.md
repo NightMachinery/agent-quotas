@@ -246,6 +246,14 @@ has removed its file. The check runs `security find-generic-password -s gemini
 is one per macOS user, not one per Gemini root, so other accounts ignore it.
 Neither check opens a credential.
 
+`agent-quotas agy-auth ACCOUNT` (or `--dir GEMINI_ROOT`) prints where that
+sign-in is stored, `file-present`, `keychain` or `missing`, and exits 0, 0 or
+1. It reads only local state and needs no daemon. The shell's agy helpers
+(`agy-best`, `agy-acc-login`, the `agy-status` fallback) ask it, passing the
+root they resolved, so this rule is written only in `agy.StoredAuth`. Where the
+binary is missing or too old to know the command (exit 2), they fall back to
+the token file alone.
+
 Codex starts `codex app-server` per auth snapshot and asks for rate limits over
 JSON-RPC, as `codex_status.py` does, including the refresh-token recovery from
 `auth_backup_dir`. Account discovery (which `auth_<alias>.json` files exist,
@@ -312,6 +320,8 @@ command name only:
   `firstTimeToReset`) and its human report.
 - `agent-quotas agy-status [--json] [--account A]`: the `agy-status --json`
   array and its human report.
+- `agent-quotas agy-auth ACCOUNT | --dir GEMINI_ROOT`: not a report but the
+  sign-in check the shell's agy helpers share (see the Antigravity reader).
 - `agent-quotas agent-status [--json] [claude codex agy]`: the combined
   document `{generated_at, providers: [{agent, title, error, accounts}]}` that
   the control page reads, and the terminal report.

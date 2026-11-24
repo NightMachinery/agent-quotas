@@ -53,6 +53,7 @@ func init() {
 		{"claude-code-usage", "the old claude-code-usage report and JSON", cmdClaudeCodeUsage},
 		{"codex-status", "the old codex-status report and JSON", cmdCodexStatus},
 		{"agy-status", "the old agy-status report and JSON", cmdAgyStatus},
+		{"agy-auth", "where an agy sign-in is stored, offline: agy-auth ACCOUNT | --dir GEMINI_ROOT", cmdAgyAuth},
 		{"agent-status", "the combined report: agent-status [--json] [claude codex agy]", cmdAgentStatus},
 		{"continue", "auto-continue registrations: continue on|off|status|list|check|stopped", cmdContinue},
 		{"keep", "keeper cache policy: keep status|set|standby|compact [AGENT_ID]", cmdKeep},
