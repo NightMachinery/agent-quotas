@@ -138,7 +138,7 @@ func cmdAgyAuth(ctx context.Context, args []string) int {
 	}
 	kind := agy.StoredAuth(ctx, procx.Exec{}, a)
 	fmt.Println(kind)
-	if kind == agy.AuthMissing {
+	if kind == agy.AuthMissing || kind == agy.AuthUnknown {
 		return exitFail
 	}
 	return exitOK

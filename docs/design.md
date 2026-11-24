@@ -247,11 +247,14 @@ the keychain, even in file mode, so m keeps working after a keychain-mode run
 has removed its file. The check runs `security find-generic-password -s gemini
 -a antigravity` without `-w` or `-g`, so it never reads the secret. The item
 is one per macOS user, not one per Gemini root, so other accounts ignore it.
-Neither check opens a credential.
+Neither check opens a credential. Only exit 44 (no such item) means no
+keychain sign-in; a lookup that times out (5 s, which a swapping Mac exceeds)
+or fails otherwise leaves the sign-in `unknown`, and the read goes on to the
+quota check rather than reporting the account signed out.
 
 `agent-quotas agy-auth ACCOUNT` (or `--dir GEMINI_ROOT`) prints where that
-sign-in is stored, `file-present`, `keychain` or `missing`, and exits 0, 0 or
-1. It reads only local state and needs no daemon. The shell's agy helpers
+sign-in is stored, `file-present`, `keychain`, `missing` or `unknown`, and
+exits 0, 0, 1 or 1. It reads only local state and needs no daemon. The shell's agy helpers
 (`agy-best`, `agy-acc-login`, the `agy-status` fallback) ask it, passing the
 root they resolved, so this rule is written only in `agy.StoredAuth`. Where the
 binary is missing or too old to know the command (exit 2), they fall back to

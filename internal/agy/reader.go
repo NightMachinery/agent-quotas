@@ -58,7 +58,15 @@ const (
 	AuthFile     = "file-present"
 	AuthKeychain = "keychain"
 	AuthMissing  = "missing"
+	// AuthUnknown: no token file, and the keychain could not be asked (the
+	// lookup timed out, as it does when the Mac swaps, or failed some other
+	// way). It is not a sign-out, so a read goes on to the quota check.
+	AuthUnknown = "unknown"
 )
+
+// keychainNotFound is security's exit status for "no such item"
+// (errSecItemNotFound); any other failure leaves the sign-in unknown.
+const keychainNotFound = 44
 
 // StoredAuth says where a's sign-in is stored, without opening it: the token
 // file, the macOS keychain, or nowhere. agy (1.5 and later) authenticates
@@ -74,8 +82,11 @@ func StoredAuth(ctx context.Context, run procx.Runner, a Account) string {
 	}
 	if a.Keychain {
 		res, err := run.Run(ctx, procx.Cmd{Argv: keychainArgv, Timeout: 5 * time.Second})
-		if err == nil && res.ExitCode == 0 {
+		switch {
+		case err == nil && res.ExitCode == 0:
 			return AuthKeychain
+		case res.ExitCode != keychainNotFound:
+			return AuthUnknown
 		}
 	}
 	return AuthMissing
@@ -263,6 +274,8 @@ func (r *Reader) Read(ctx context.Context, ref model.AccountRef, opts model.Read
 	switch legacy.AuthStatus = StoredAuth(ctx, r.run, a); legacy.AuthStatus {
 	case AuthKeychain:
 		stored = "a keychain sign-in exists"
+	case AuthUnknown:
+		stored = "the keychain could not be checked"
 	case AuthMissing:
 		legacy.SignedIn = model.B(false)
 		legacy.Message = model.S("Not signed in; run agy-acc-login " + a.Name)

@@ -378,6 +378,9 @@ func (k *keychainAgy) Run(ctx context.Context, c procx.Cmd) (procx.Result, error
 		if strings.Contains(strings.Join(c.Argv, " "), " -w") || strings.Contains(strings.Join(c.Argv, " "), " -g") {
 			return procx.Result{ExitCode: 1}, errors.New("the keychain lookup must never ask for the secret")
 		}
+		if k.keychain == -1 {
+			return procx.Result{ExitCode: -1}, procx.ErrTimeout
+		}
 		if k.keychain != 0 {
 			return procx.Result{ExitCode: k.keychain}, errors.New("security: exit status 44")
 		}
@@ -432,6 +435,14 @@ func TestKeychainSignInCountsForTheDefaultRoot(t *testing.T) {
 	if !strings.Contains(string(snap.Native), "Not signed in; run agy-acc-login m") {
 		t.Fatalf("no keychain item, no file: %s", snap.Native)
 	}
+	// A lookup that times out (the Mac swapping) is not a sign-out: the
+	// read goes on to the quota check.
+	fake.keychain = -1
+	snap, err = r.Read(ctx, ref("m"), at(9150))
+	if err != nil || strings.Contains(string(snap.Native), "Not signed in") || !strings.Contains(string(snap.Native), `"auth_status":"unknown"`) ||
+		!strings.Contains(string(snap.Native), `"bucket_id":"gemini-weekly"`) {
+		t.Fatalf("keychain timeout: %v %s", err, snap.Native)
+	}
 	fake.keychain = 0
 	snap, _ = r.Read(ctx, ref("fm2"), at(9200))
 	if !strings.Contains(string(snap.Native), "Not signed in; run agy-acc-login fm2") {
@@ -447,6 +458,11 @@ func TestKeychainSignInCountsForTheDefaultRoot(t *testing.T) {
 	if got := StoredAuth(ctx, fake, fm2); got != AuthMissing {
 		t.Fatalf("fm2 with nothing: %s", got)
 	}
+	fake.keychain = -1
+	if got := StoredAuth(ctx, fake, m); got != AuthUnknown {
+		t.Fatalf("m when the keychain lookup times out: %s", got)
+	}
+	fake.keychain = 0
 	if err := os.WriteFile(fm2.TokenFile(), []byte("x"), 0o600); err != nil {
 		t.Fatal(err)
 	}
