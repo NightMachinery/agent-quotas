@@ -398,7 +398,7 @@ func (k *Keeper) observeWith(ctx context.Context, agentID, home string, inspect 
 		if b == nil {
 			b = paseo.Obj("agent", o.ident.Agent, "profile", o.ident.Profile, "native_home", o.ident.NativeHome)
 		}
-		o.failure, _ = k.Engine.Failure(snap, o.record, b)
+		o.failure, _ = k.Engine.Failure(snap, o.record, b, o.home)
 	}
 	return o, nil
 }

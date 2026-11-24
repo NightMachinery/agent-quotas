@@ -406,12 +406,14 @@ The live check retains the following guarantees:
    `isApiErrorMessage` with `error: "rate_limit"` or quota text; Codex: last root
    `task_complete` with a usage-limit error, rollout found through the UUIDv7
    day). Digests are byte-compatible with the Python ones, so an existing
-   `claimed_failure` stays claimed.
+   `claimed_failure` stays claimed. For Antigravity agents, see "Antigravity
+   agents" below.
 5. Pending permission, or no failure while not in error: waiting.
 6. Failure already claimed: waiting for a new one. A keeper ping that fails
    on quota is marked handled without a resume.
 7. Quota for that agent's own binding (Claude profile + model family; Codex
-   active auth of that `CODEX_HOME`) is read from the daemon store with a
+   active auth of that `CODEX_HOME`; Antigravity account + model, by
+   `agy-best`'s rule over its pools) is read from the daemon store with a
    refresh if the snapshot is older than 60 s (subject to the floor and
    back-off). Not usable: waiting for quota recovery. Unknown (a failed or
    stale reading): the check is postponed and the registration left as it
@@ -441,6 +443,33 @@ Python fallback checks quota failures too, but lacks the keeper-ping filter.
 
 `stopped` and `stopped --usable` (the pickers' listing) are ported too, with
 Antigravity quota read from the store instead of `agy-status`.
+
+#### Antigravity agents
+
+A provider whose `extends` chain reaches neither `claude` nor `codex` is an
+Antigravity provider when its command is `agy` (or it is Paseo's
+`antigravity`); its identity is agent `agy`, profile the account
+(`AGY_ACCOUNT_ID`, default `m`) and native home agy's app data directory
+(`--app_data_dir`, relative to `--gemini_dir`; else `<gemini dir>/antigravity-cli`).
+Any other provider is still refused.
+
+agy-acp ends a turn that hits the account's quota with an ordinary reply,
+`⚠ Individual quota reached. Please upgrade your subscription to increase your
+limits. Resets in 2h19m26s.`, so Paseo records the agent `idle` with no
+`lastError`, and agy's own transcript does not contain the notice either. The
+failure is read from the end of Paseo's timeline instead (`paseo logs <id>
+--tail 30 --json`): the last model output (a reply, reasoning, or a tool call
+of the agent's own) is a reply whose first line opens with `⚠` and matches the
+quota pattern. Messages sent to the agent after it are skipped, since a turn
+one of them started hit the limit again or is still running. The identity is a
+digest of the agent and the notice's `messageId`. "Resets in" plus the record's
+`lastActivityAt` estimates the reset.
+
+The answer is cached in `<registrations dir>/agy-stops.cache`, keyed by the
+record's `lastActivityAt`: any new turn moves it, while Paseo closing an idle
+agent does not. A `closed` agent gets only the cached answer, because reading
+its timeline makes Paseo load the agent again, which starts agy (about 4 s, and
+an error for an old session).
 
 ### Native engine (port of `agent-auto-continue.zsh` and the armed-job engine)
 

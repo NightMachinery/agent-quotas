@@ -11,9 +11,9 @@ import (
 // native agent, the quota profile, the native home and a hash of the launch
 // configuration (labels excluded).
 type Identity struct {
-	Agent      string // "claude" or "codex"
-	Profile    string // Claude profile name, or "codex"
-	NativeHome string // resolved CLAUDE_CONFIG_DIR or CODEX_HOME
+	Agent      string // "claude", "codex" or "agy"
+	Profile    string // Claude profile name, "codex", or the agy account
+	NativeHome string // resolved CLAUDE_CONFIG_DIR, CODEX_HOME or agy app data dir
 	ConfigHash string
 }
 
@@ -77,7 +77,8 @@ next:
 
 // providerConfig ports provider_config: follow the extends chain to claude or
 // codex, merge launch settings (labels never count), and name the quota
-// identity.
+// identity. A chain that ends elsewhere is an Antigravity provider when
+// agyAccount says so (see agyIdentity), else refused.
 func (e *Engine) providerConfig(home string, provider any) (Identity, error) {
 	provs, err := providers(home)
 	if err != nil {
@@ -93,7 +94,10 @@ func (e *Engine) providerConfig(home string, provider any) (Identity, error) {
 		}
 		entry, isObj := provs.Object(name)
 		if !ok || seen[name] || !isObj {
-			return Identity{}, refuse("Provider must resolve to Claude or Codex")
+			if account, isAgy, err := agyAccount(home, provider); err == nil && isAgy {
+				return e.agyIdentity(home, provider, account)
+			}
+			return Identity{}, refuse("Provider must resolve to Claude, Codex or Antigravity")
 		}
 		seen[name] = true
 		entryEnv, err := envOf(entry)

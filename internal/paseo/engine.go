@@ -79,6 +79,9 @@ type Engine struct {
 	checkableFn  func(provider any) bool
 	agyAccountFn func(provider any) (string, bool, error)
 	activityFn   func(record *Object, id Identity) (Activity, error)
+	agyStopFn    func(record *Object, home string) (AgyStop, error)
+
+	agyMu sync.Mutex // the agy stop cache file
 }
 
 // New returns an engine using the paseo command found by cfg.Paseo.Binary.
@@ -288,7 +291,7 @@ func (e *Engine) pollStatus(ctx context.Context, batch *PollListing, state, bind
 	if status != "idle" && status != "closed" && status != "error" {
 		return "", nil
 	}
-	failure, err := e.failureOf(Obj("Status", status), record, binding)
+	failure, err := e.failureOf(Obj("Status", status), record, binding, home)
 	if err != nil {
 		return "", nil // live status may make a transcript check unnecessary
 	}
@@ -298,7 +301,7 @@ func (e *Engine) pollStatus(ctx context.Context, batch *PollListing, state, bind
 		}
 		// A collected error may appear closed in Paseo. Check the transcript
 		// too before ruling out a failure when the record has no quota error.
-		if failure, err := e.failureOf(Obj("Status", "closed"), record, binding); err != nil || failure != "" {
+		if failure, err := e.failureOf(Obj("Status", "closed"), record, binding, home); err != nil || failure != "" {
 			return "", nil
 		}
 	}
@@ -310,7 +313,8 @@ func (e *Engine) pollStatus(ctx context.Context, batch *PollListing, state, bind
 }
 
 // failureOf ports failure_of: the current failed turn's identity, or "".
-func (e *Engine) failureOf(snapshot, record *Object, binding *Object) (string, error) {
+// home is the agent's Paseo home.
+func (e *Engine) failureOf(snapshot, record *Object, binding *Object, home string) (string, error) {
 	status, _ := snapshot.String("Status")
 	// Idle runtime cleanup reports the persisted agent as closed. Its last
 	// quota failure still counts; loading the runtime is not a new turn.
@@ -321,9 +325,14 @@ func (e *Engine) failureOf(snapshot, record *Object, binding *Object) (string, e
 		}
 	}
 	id := identityOf(binding)
-	if (status == "idle" || status == "closed") && (id.Agent == "claude" || id.Agent == "codex") &&
-		!truthy(record.Value("archivedAt")) {
+	if (status != "idle" && status != "closed") || truthy(record.Value("archivedAt")) {
+		return "", nil
+	}
+	switch id.Agent {
+	case "claude", "codex":
 		return e.transcript(record, id)
+	case AgentAgy:
+		return e.agyLimitFailure(record, home)
 	}
 	return "", nil
 }
@@ -366,8 +375,8 @@ func (e *Engine) Binding(snapshot *Object, home string) (*Object, error) {
 func IdentityOf(binding *Object) Identity { return identityOf(binding) }
 
 // Failure is the identity of the agent's current quota-failed turn, or "".
-func (e *Engine) Failure(snapshot, record, binding *Object) (string, error) {
-	return e.failureOf(snapshot, record, binding)
+func (e *Engine) Failure(snapshot, record, binding *Object, home string) (string, error) {
+	return e.failureOf(snapshot, record, binding, home)
 }
 
 // quotaFor ports quota(): ask the daemon about the seat this provider
@@ -380,8 +389,11 @@ func (e *Engine) quotaFor(ctx context.Context, home string, provider any, model 
 	if e.Quotas == nil {
 		return false, errors.New("no quota source")
 	}
-	if id.Agent == "codex" {
+	switch id.Agent {
+	case "codex":
 		return e.Quotas.Codex(ctx, id.NativeHome)
+	case AgentAgy:
+		return e.Quotas.Agy(ctx, id.Profile, model)
 	}
 	return e.Quotas.Claude(ctx, id.Profile, ModelFamily(model))
 }
@@ -458,7 +470,7 @@ func (e *Engine) tick(ctx context.Context, path string, batch *PollListing) (str
 		if err != nil {
 			return "", err
 		}
-		failure, err := e.failureOf(snapshot, record, stored)
+		failure, err := e.failureOf(snapshot, record, stored, home)
 		if err != nil {
 			return "", err
 		}
@@ -503,7 +515,7 @@ func (e *Engine) tick(ctx context.Context, path string, batch *PollListing) (str
 				changed = !equal(fb, state.Value("binding"))
 			}
 			if !changed {
-				again, err := e.failureOf(fresh, current, stored)
+				again, err := e.failureOf(fresh, current, stored, home)
 				if err != nil {
 					return "", err
 				}
@@ -851,8 +863,8 @@ type Registration struct {
 	Enabled    bool   `json:"enabled"`
 	Poll       int    `json:"poll"` // seconds; 300 when unreadable
 	Status     string `json:"status"`
-	Agent      string `json:"agent"`   // binding: claude or codex
-	Profile    string `json:"profile"` // binding: Claude profile, or "codex"
+	Agent      string `json:"agent"`   // binding: claude, codex or agy
+	Profile    string `json:"profile"` // binding: Claude profile, "codex", or the agy account
 	SetBy      string `json:"set_by,omitempty"`
 	NativeHome string `json:"native_home"`
 	Provider   string `json:"provider"`
@@ -983,10 +995,17 @@ func (e *Engine) stoppedAgents(home string) ([]string, error) {
 			c = cached{id: id, ok: err == nil}
 			identities[key] = c
 		}
-		if !c.ok || (c.id.Agent != "claude" && c.id.Agent != "codex") {
+		if !c.ok {
 			continue
 		}
-		failure, err := e.transcript(record, c.id)
+		var failure string
+		switch c.id.Agent {
+		case "claude", "codex":
+			failure, err = e.transcript(record, c.id)
+		case AgentAgy:
+			// A timeline that cannot be read now hides only this agent.
+			failure, _ = e.agyLimitFailure(record, home)
+		}
 		if err != nil {
 			return nil, err
 		}
@@ -1028,33 +1047,27 @@ func (e *Engine) usableAgents(ctx context.Context, home string, agentIDs []strin
 			continue
 		}
 		provider := record.Value("provider")
-		model := ""
-		if cfg, ok := record.Value("config").(*Object); ok && truthy(cfg.Value("model")) {
-			model = pyStr(cfg.Value("model"))
-		} else if rt, ok := record.Value("runtimeInfo").(*Object); ok && truthy(rt.Value("model")) {
-			model = pyStr(rt.Value("model"))
+		model := ModelOf(record)
+		account, isAgy, err := e.agyAccountOf(home, provider)
+		if err != nil {
+			return out, err
 		}
-		checkable := e.checkable(home, provider)
-		if !checkable {
-			account, isAgy, err := e.agyAccountOf(home, provider)
-			if err != nil {
-				return out, err
-			}
-			if isAgy {
-				k := key{"agy", account, model}
-				if _, done := verdicts[k]; !done {
-					usable, err := e.agyQuota(ctx, account, model)
-					if err != nil {
-						warn("Antigravity " + account + " " + model + ": quota unknown (" + err.Error() + "); its agents are kept")
-						usable = true
-					}
-					verdicts[k] = usable
+		if isAgy {
+			k := key{"agy", account, model}
+			if _, done := verdicts[k]; !done {
+				usable, err := e.agyQuota(ctx, account, model)
+				if err != nil {
+					warn("Antigravity " + account + " " + model + ": quota unknown (" + err.Error() + "); its agents are kept")
+					usable = true
 				}
-				if verdicts[k] {
-					out = append(out, agentID)
-				}
-				continue
+				verdicts[k] = usable
 			}
+			if verdicts[k] {
+				out = append(out, agentID)
+			}
+			continue
+		}
+		if !e.checkable(home, provider) {
 			warn(agentID + ": " + pyStr(provider) + " quota is not checked here; kept")
 			out = append(out, agentID)
 			continue
@@ -1080,6 +1093,18 @@ func (e *Engine) agyQuota(ctx context.Context, account, model string) (bool, err
 		return false, errors.New("no quota source")
 	}
 	return e.Quotas.Agy(ctx, account, model)
+}
+
+// ModelOf is the model a stored Paseo record runs: its config's, else the
+// runtime's; "" when neither says.
+func ModelOf(record *Object) string {
+	if cfg, ok := record.Value("config").(*Object); ok && truthy(cfg.Value("model")) {
+		return pyStr(cfg.Value("model"))
+	}
+	if rt, ok := record.Value("runtimeInfo").(*Object); ok && truthy(rt.Value("model")) {
+		return pyStr(rt.Value("model"))
+	}
+	return ""
 }
 
 // Stopped is the old `stopped` action: the local agents of home ("" means

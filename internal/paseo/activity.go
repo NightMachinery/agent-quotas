@@ -311,6 +311,8 @@ func ActivityOf(record *Object, id Identity) (Activity, error) {
 		path, scan = claudeTranscript(record, id.NativeHome), scanClaude
 	case "codex":
 		path, scan = codexTranscript(record, id.NativeHome), scanCodex
+	case AgentAgy:
+		path, scan = agyTranscript(record, id.NativeHome), scanAgy
 	}
 	if path == "" {
 		return Activity{}, nil

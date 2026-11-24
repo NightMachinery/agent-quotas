@@ -73,15 +73,20 @@
  },
  {
   "provider": "cycle-a",
-  "error": "Provider must resolve to Claude or Codex"
+  "error": "Provider must resolve to Claude, Codex or Antigravity"
  },
  {
   "provider": "agy-acp",
-  "error": "Provider must resolve to Claude or Codex"
+  "identity": {
+   "agent": "agy",
+   "profile": "cave",
+   "native_home": "~/.gemini/antigravity-cli",
+   "config_hash": "ef4c603e26ba697d37f610cb224a008b994721261ea377d90f37485514174fb1"
+  }
  },
  {
   "provider": "nowhere",
-  "error": "Provider must resolve to Claude or Codex"
+  "error": "Provider must resolve to Claude, Codex or Antigravity"
  },
  {
   "provider": "agy-acp",

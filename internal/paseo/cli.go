@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"strconv"
 	"sync"
 	"time"
 
@@ -245,6 +246,20 @@ func (c CLI) Logs(ctx context.Context, agentID, home string, since time.Time) ([
 	if err != nil {
 		return nil, err
 	}
+	return timelineItems(out)
+}
+
+// Tail implements Tailer: `paseo logs <id> --json --tail <n> --home <home>`.
+func (c CLI) Tail(ctx context.Context, agentID, home string, n int) ([]*Object, error) {
+	out, err := c.run(ctx, home, []string{"logs", agentID, "--json", "--tail", strconv.Itoa(n), "--home", home})
+	if err != nil {
+		return nil, err
+	}
+	return timelineItems(out)
+}
+
+// timelineItems decodes the items of `paseo logs --json`.
+func timelineItems(out []byte) ([]*Object, error) {
 	o, err := DecodeObject(out)
 	if err != nil {
 		return nil, refuse("paseo logs returned unexpected JSON")
