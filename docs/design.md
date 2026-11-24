@@ -352,6 +352,8 @@ which take the same lock and record the same claim) and `native.enabled`
   `usable`: check every registration bound to that account;
 - daemon start-up: check every registration;
 - a safety tick per registration (its `poll`, default 300 s, minimum 30 s);
+- for an Antigravity agent waiting for quota, its registration's `wake_at`
+  (see "Antigravity agents");
 - an explicit check or a hook kick.
 
 A check never blocks a quota poller. Paseo checks run independently, with
@@ -467,6 +469,13 @@ quota pattern. Messages sent to the agent after it are skipped, since a turn
 one of them started hit the limit again or is still running. The identity is a
 digest of the agent and the notice's `messageId`. "Resets in" plus the record's
 `lastActivityAt` estimates the reset.
+
+No account transition announces that reset: agy's account reading changes
+only while some agy agent runs, and the account as a whole often stays usable
+(other pools have room) while the agent's model is blocked. So a check that
+finds the agent waiting for quota stores `wake_at`, the notice's reset plus
+10 s, in the registration, and the scheduler checks it once at that time
+rather than up to a safety tick later.
 
 The answer is cached in `<registrations dir>/agy-stops.cache`, keyed by the
 record's `lastActivityAt`: any new turn moves it, while Paseo closing an idle

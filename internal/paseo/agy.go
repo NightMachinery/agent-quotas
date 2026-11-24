@@ -259,6 +259,27 @@ func (e *Engine) agyRemember(agentID, key string, stop AgyStop) {
 	_ = atomicWrite(path, cache)
 }
 
+// agyWakeSlack is how long after a notice's reset time its agent is checked:
+// the notice counts from the record's lastActivityAt, which can be a little
+// earlier than agy's own clock.
+const agyWakeSlack = 10
+
+// agyWakeAt is when an Antigravity agent waiting for quota should be checked
+// again: just after the reset its notice names, or 0. The daemon learns of
+// that reset from nothing else (agy's reading of the account changes only
+// while an agy agent runs), so without it the agent waits for its safety
+// tick, up to its poll interval longer.
+func (e *Engine) agyWakeAt(record, binding *Object, home string) float64 {
+	if identityOf(binding).Agent != AgentAgy {
+		return 0
+	}
+	stop, err := e.AgyStopOf(record, home)
+	if err != nil || stop.ResetAt <= 0 {
+		return 0
+	}
+	return stop.ResetAt + agyWakeSlack
+}
+
 // agyLimitFailure is limitFailure for an Antigravity agent.
 func (e *Engine) agyLimitFailure(record *Object, home string) (string, error) {
 	stop, err := e.AgyStopOf(record, home)

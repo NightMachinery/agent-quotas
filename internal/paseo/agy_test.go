@@ -151,13 +151,21 @@ func TestAgyAgentContinuesAfterQuota(t *testing.T) {
 	if b := h.binding(h.snapshot); b.Value("agent") != AgentAgy || b.Value("profile") != "cave" {
 		t.Fatal(b)
 	}
+	h.e.agyStopFn = func(*Object, string) (AgyStop, error) { return AgyStop{Failure: "agy-f1", ResetAt: 1795549152}, nil }
 	h.quotas.usable = false
 	if s := h.tick(); s != StatusWaitingQuota {
 		t.Fatal(s)
 	}
+	// The scheduler checks again just after the reset the notice names.
+	if at := epochOf(h.read().Value("wake_at")); at != 1795549152+agyWakeSlack {
+		t.Fatalf("wake_at %v", at)
+	}
 	h.quotas.usable = true
 	if s := h.tick(); !strings.Contains(s, "sent") {
 		t.Fatal(s)
+	}
+	if _, ok := h.read().Get("wake_at"); ok {
+		t.Fatal("wake_at outlived the wait")
 	}
 	if len(h.paseo.sent) != 1 || h.paseo.sent[0].text != ContinueText {
 		t.Fatalf("%+v", h.paseo.sent)

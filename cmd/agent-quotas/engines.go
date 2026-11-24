@@ -20,7 +20,8 @@ const engineQuotaMaxAge = 60 * time.Second
 
 // paseoScheduler runs Paseo registrations' ticks: at start-up, on every
 // registration's own poll interval (the safety tick), when its account
-// becomes usable, and on request.
+// becomes usable, at the reset an agy agent's quota notice names (its
+// registration's wake_at), and on request.
 type paseoScheduler struct {
 	eng  *paseo.Engine
 	log  *log.Logger
@@ -35,6 +36,8 @@ type paseoCheck struct {
 	retry   paseo.CheckRetry
 	running bool
 	pending bool
+	// woke is the wake_at already acted on, so each wakes one tick.
+	woke float64
 }
 
 type paseoKick struct {
@@ -113,12 +116,21 @@ func (s *paseoScheduler) round(ctx context.Context, k paseoKick) {
 			check = &paseoCheck{}
 			s.checks[r.Path] = check
 		}
+		wake := r.Status == paseo.StatusWaitingQuota && r.WakeAt > 0 && r.WakeAt != check.woke &&
+			float64(now.UnixNano())/1e9 >= r.WakeAt
+		forced = forced || wake
 		if check.running {
 			check.pending = check.pending || forced
+			if wake {
+				check.woke = r.WakeAt
+			}
 			continue
 		}
 		if now.Before(check.retry.At) || (!forced && now.Before(check.next)) {
 			continue
+		}
+		if wake {
+			check.woke = r.WakeAt
 		}
 		home := s.eng.ResolveHome(r.Home)
 		batch := batches[home]

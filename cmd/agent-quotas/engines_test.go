@@ -127,3 +127,72 @@ func TestPaseoSchedulerRetriesWithoutBlockingOtherRegistrations(t *testing.T) {
 		t.Fatalf("logged %d check failures: %s", got, logs)
 	}
 }
+
+// An agy agent waiting for quota is checked once at the reset its notice
+// names (wake_at), well before its safety tick.
+func TestPaseoSchedulerWakesAgyAgentAtReset(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	dir := t.TempDir()
+	engine := paseo.New(&config.Config{Paseo: config.Paseo{RegistrationsDir: dir}}, nil)
+	fake := schedulerPaseo{started: make(chan string, 4), fail: make(chan struct{})}
+	engine.Paseo = fake
+	path := filepath.Join(dir, "agy.json")
+	register := func(wakeAt float64) {
+		t.Helper()
+		state := paseo.Obj("enabled", true, "home", dir, "agent_id", "agy", "poll", 300,
+			"status", paseo.StatusWaitingQuota, "wake_at", wakeAt)
+		if err := paseo.AtomicWrite(path, state); err != nil {
+			t.Fatal(err)
+		}
+	}
+	s := newPaseoScheduler(engine, log.New(&bytes.Buffer{}, "", 0))
+	settle := func() {
+		t.Helper()
+		for {
+			s.mu.Lock()
+			running := s.checks[path] != nil && s.checks[path].running
+			s.mu.Unlock()
+			if !running {
+				return
+			}
+			select {
+			case <-ctx.Done():
+				t.Fatal("check stalled")
+			case <-time.After(time.Millisecond):
+			}
+		}
+	}
+	started := func() bool {
+		select {
+		case <-fake.started:
+			return true
+		case <-time.After(50 * time.Millisecond):
+			return false
+		}
+	}
+	future := float64(time.Now().Add(time.Hour).Unix())
+	register(future)
+	s.round(ctx, paseoKick{}) // the first round checks every registration
+	if !started() {
+		t.Fatal("first check did not start")
+	}
+	settle()
+	register(future)
+	s.round(ctx, paseoKick{})
+	if started() {
+		t.Fatal("checked before the reset")
+	}
+	past := float64(time.Now().Add(-time.Second).Unix())
+	register(past)
+	s.round(ctx, paseoKick{})
+	if !started() {
+		t.Fatal("not checked at the reset")
+	}
+	settle()
+	register(past)
+	s.round(ctx, paseoKick{})
+	if started() {
+		t.Fatal("one reset woke two checks")
+	}
+}

@@ -457,6 +457,7 @@ func (e *Engine) tick(ctx context.Context, path string, batch *PollListing) (str
 	if err != nil {
 		return "", err
 	}
+	state.Delete("wake_at")
 	if !equal(snapshot.Value("Id"), agentID) || truthy(snapshot.Value("Archived")) {
 		state.Set("enabled", false)
 		setStatus(StatusUnavailable)
@@ -493,6 +494,9 @@ func (e *Engine) tick(ctx context.Context, path string, batch *PollListing) (str
 			}
 			if !usable {
 				setStatus(StatusWaitingQuota)
+				if at := e.agyWakeAt(record, stored, home); at > 0 {
+					state.Set("wake_at", at)
+				}
 				break
 			}
 			// Recheck after a potentially slow account query: the user may
@@ -868,6 +872,10 @@ type Registration struct {
 	SetBy      string `json:"set_by,omitempty"`
 	NativeHome string `json:"native_home"`
 	Provider   string `json:"provider"`
+	// WakeAt is when an agy agent waiting for quota is checked again
+	// besides its safety tick (Unix seconds; 0 for none): just after the
+	// reset its quota notice names.
+	WakeAt float64 `json:"wake_at,omitempty"`
 }
 
 // Registrations lists every readable registration file, enabled or not,
@@ -894,6 +902,7 @@ func (e *Engine) Registrations() ([]Registration, error) {
 		r.Profile, _ = binding.String("profile")
 		r.NativeHome, _ = binding.String("native_home")
 		r.Provider, _ = binding.String("provider")
+		r.WakeAt = epochOf(state.Value("wake_at"))
 		if n, ok := state.Value("poll").(json.Number); ok {
 			if f, err := n.Float64(); err == nil && f >= 1 {
 				r.Poll = int(f)
