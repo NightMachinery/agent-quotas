@@ -325,7 +325,20 @@ command name only:
   `codex_status.py` document (`authFiles`, `averageUsage` with
   `firstTimeToReset`) and its human report.
 - `agent-quotas agy-status [--json] [--account A]`: the `agy-status --json`
-  array and its human report.
+  array and its human report. The shell's `agy-status` is a thin wrapper over
+  it, so it also has what only the old zsh engine had:
+  - `--flat`: one account's flat bucket array (`agy_status_json_p=y`), the
+    account from `--account`, else `$AGY_ACCOUNT_ID`, else `m`. The reading's
+    notes go to stderr; an account with an error, no sign-in or no buckets
+    exits 1, since the array cannot say so.
+  - `--cache-only`: reads the statusline caches in this process and never
+    starts agy, even under `deus`; a missing cache, or one with nothing
+    younger than `--max-age` seconds, is that account's error. The quota
+    watchers use it with `--max-age 3600`. `--max-age` also works with
+    `--direct`; the daemon always uses `statusline_max_age_s`.
+  - `--credits`: after the human report, each signed-in account's
+    pay-as-you-go balance from `agy -p /credits`. It has no cache, so it costs
+    an agy start-up per account (in parallel), though no quota.
 - `agent-quotas agy-auth ACCOUNT | --dir GEMINI_ROOT`: not a report but the
   sign-in check the shell's agy helpers share (see the Antigravity reader).
 - `agent-quotas agent-status [--json] [claude codex agy]`: the combined

@@ -168,32 +168,13 @@ type slowError struct {
 func (e *slowError) Error() string { return e.err.Error() }
 func (e *slowError) Unwrap() error { return e.err }
 
-// runUsage runs `agy -p /usage` for one account exactly as h-agy-status-run
-// did: file-auth environment, the account's --gemini_dir and
-// --app_data_dir, plan mode, no stdin, a fresh empty working directory (agy
-// reads the project context of its cwd) and a timeout.
+// runUsage runs `agy -p /usage` for one account and reads its rows.
 func (r *Reader) runUsage(ctx context.Context, a Account) ([]usageRow, error) {
-	tmp, err := os.MkdirTemp("", "agy-status-")
+	out, err := r.runPrint(ctx, a, "/usage")
 	if err != nil {
-		return nil, &slowError{1, err}
+		return nil, err
 	}
-	defer os.RemoveAll(tmp)
-	timeout := time.Duration(r.cfg.Agy.TimeoutS) * time.Second
-	res, err := r.run.Run(ctx, procx.Cmd{
-		Argv:    a.UsageArgv(r.cfg.Agy.Binary),
-		Env:     r.usageEnv(a),
-		Dir:     tmp,
-		Timeout: timeout,
-	})
-	switch {
-	case errors.Is(err, procx.ErrTimeout):
-		return nil, &slowError{124, &model.UpstreamError{Err: fmt.Errorf("`agy -p /usage' timed out after %s", timeout)}}
-	case err != nil && res.ExitCode > 0:
-		return nil, &slowError{res.ExitCode, &model.UpstreamError{Err: fmt.Errorf("`agy -p /usage' failed (%d)", res.ExitCode)}}
-	case err != nil:
-		return nil, &slowError{1, fmt.Errorf("`agy -p /usage': %w", err)}
-	}
-	rows, err := parseUsage(strings.TrimRight(string(res.Stdout), "\n"))
+	rows, err := parseUsage(out)
 	if err != nil {
 		return nil, &slowError{1, err}
 	}
@@ -203,10 +184,40 @@ func (r *Reader) runUsage(ctx context.Context, a Account) ([]usageRow, error) {
 	return rows, nil
 }
 
-// UsageArgv is the slow path's command line.
-func (a Account) UsageArgv(binary string) []string {
+// runPrint runs one of agy's print-mode slash commands (/usage, /credits)
+// for one account, as h-agy-status-run did: file-auth environment, the
+// account's --gemini_dir and --app_data_dir, plan mode, no stdin, a fresh
+// empty working directory (agy reads the project context of its cwd) and a
+// timeout. It returns stdout without trailing newlines. A slash command
+// starts no agent turn, so it spends no quota.
+func (r *Reader) runPrint(ctx context.Context, a Account, slash string) (string, error) {
+	tmp, err := os.MkdirTemp("", "agy-status-")
+	if err != nil {
+		return "", &slowError{1, err}
+	}
+	defer os.RemoveAll(tmp)
+	timeout := time.Duration(r.cfg.Agy.TimeoutS) * time.Second
+	res, err := r.run.Run(ctx, procx.Cmd{
+		Argv:    a.PrintArgv(r.cfg.Agy.Binary, slash),
+		Env:     r.usageEnv(a),
+		Dir:     tmp,
+		Timeout: timeout,
+	})
+	switch {
+	case errors.Is(err, procx.ErrTimeout):
+		return "", &slowError{124, &model.UpstreamError{Err: fmt.Errorf("`agy -p %s' timed out after %s", slash, timeout)}}
+	case err != nil && res.ExitCode > 0:
+		return "", &slowError{res.ExitCode, &model.UpstreamError{Err: fmt.Errorf("`agy -p %s' failed (%d)", slash, res.ExitCode)}}
+	case err != nil:
+		return "", &slowError{1, fmt.Errorf("`agy -p %s': %w", slash, err)}
+	}
+	return strings.TrimRight(string(res.Stdout), "\n"), nil
+}
+
+// PrintArgv is the command line of a print-mode slash command.
+func (a Account) PrintArgv(binary, slash string) []string {
 	return []string{binary, "--gemini_dir=" + a.GeminiDir, "--app_data_dir=antigravity-cli",
-		"--mode", "plan", "--print", "/usage"}
+		"--mode", "plan", "--print", slash}
 }
 
 func (r *Reader) usageEnv(a Account) []string {

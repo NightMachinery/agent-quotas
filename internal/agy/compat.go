@@ -32,6 +32,46 @@ func LegacyJSON(rows []json.RawMessage) []byte {
 	return out.Bytes()
 }
 
+// FlatBucket is one bucket of the flat array (`agy_status_json_p=y
+// agy-status`): an account object's bucket without used_percent.
+type FlatBucket struct {
+	Group            string  `json:"group"`
+	Label            string  `json:"label"`
+	RemainingPercent float64 `json:"remaining_percent"`
+	ResetsAt         float64 `json:"resets_at"`
+	ResetsAtISO      string  `json:"resets_at_iso"`
+	Source           string  `json:"source"`
+	BucketID         string  `json:"bucket_id,omitempty"`
+}
+
+// FlatJSON is the flat bucket array of one account's object (a snapshot's
+// Native row), the contract of the older reset notifiers. An account with an
+// error, no sign-in or no buckets is an error, since the array has no room
+// to say so.
+func FlatJSON(native json.RawMessage) ([]byte, error) {
+	var a LegacyAccount
+	if err := json.Unmarshal(native, &a); err != nil {
+		return nil, err
+	}
+	switch {
+	case a.Error != nil:
+		return nil, errors.New(*a.Error)
+	case a.Message != nil && len(a.Buckets) == 0:
+		return nil, errors.New(*a.Message)
+	case len(a.Buckets) == 0:
+		return nil, errors.New("no quota buckets")
+	}
+	flat := make([]FlatBucket, len(a.Buckets))
+	for i, b := range a.Buckets {
+		flat[i] = FlatBucket{b.Group, b.Label, b.RemainingPercent, b.ResetsAt, b.ResetsAtISO, b.Source, b.BucketID}
+	}
+	out, err := json.MarshalIndent(flat, "", "  ")
+	if err != nil {
+		return nil, err
+	}
+	return append(out, '\n'), nil
+}
+
 // ExitCode is agy-status's exit status for rows: 1 when any account has an
 // error (the report is still complete), else 0. Signed out is not an error.
 func ExitCode(rows []json.RawMessage) int {

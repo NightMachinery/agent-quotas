@@ -47,7 +47,11 @@ func serve(ctx context.Context, cfg *config.Config, socket string) error {
 // directDocument reads the selected accounts in this process, without the
 // daemon: no cache, no coalescing.
 func directDocument(ctx context.Context, cfg *config.Config, selectors []string, force bool) (model.Document, error) {
-	readers := buildReaders(cfg)
+	return readWith(ctx, buildReaders(cfg), selectors, force)
+}
+
+// readWith reads the selected accounts of readers in this process.
+func readWith(ctx context.Context, readers []model.Reader, selectors []string, force bool) (model.Document, error) {
 	var refs []model.AccountRef
 	byProvider := map[string]model.Reader{}
 	for _, r := range readers {

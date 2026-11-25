@@ -457,6 +457,10 @@ func (r *Reader) fallback(ctx context.Context, a Account, now time.Time, why str
 }
 
 func (r *Reader) slow(ctx context.Context, a Account, now time.Time, why string) readResult {
+	if r.CacheOnly { // a forced read (deus) comes here directly
+		return readResult{exit: 1, notes: []model.Note{{Severity: model.Info, Text: why}},
+			err: errors.New("no usable cached quota; cache-only mode skips agy/network")}
+	}
 	r.mu.Lock()
 	r.lastSlow[a.Name] = now
 	r.mu.Unlock()
