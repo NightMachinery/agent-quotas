@@ -950,10 +950,13 @@ differs:
   rewrites the cache, so that capture time spaces the runs; a failed run
   serves the old cache. `agy -p /usage` itself touches `conversations` while
   it runs, so the slow path stamps its reading when the run ends; stamped at
-  the start, every run would look like use and start the next one. agy lists
-  a model's own pool (Gemini 4 Argon) only some of the time, so a slow read
+  the start, every run would look like use and start the next one. A slow read
   keeps each cached pool the run did not print, as a `cache` row, where the
-  old tool showed only the run's rows. The daemon (never a command run by
+  old tool showed only the run's rows, with one exception: /usage lists a
+  model's own pool (Gemini 4 Argon) only while that model is in use, so a
+  model pool an earlier run printed and this one leaves out is retired, from
+  the cache and the report. The general pools, and pools only the statusline
+  hook reports, are never retired. The daemon (never a command run by
   hand) also re-reads an account nobody uses: when its newest reading is
   older than `stale_refresh_s` (an hour; -1 turns it off), or a pool's reset
   has passed since that pool was read (one run, `blocked_grace_s` after the

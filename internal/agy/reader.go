@@ -593,14 +593,14 @@ func (r *Reader) slow(ctx context.Context, a Account, now time.Time, why string)
 		})
 		printed[row.BucketID] = true
 	}
-	// agy lists a model's own pool (Gemini 4 Argon) only some of the time.
 	// A pool this run did not print stays in the report as the cache has
-	// it, as a cache read would show it, instead of vanishing until the
-	// next one.
+	// it, as a cache read would show it, unless the run retired it (a
+	// model's pool /usage no longer lists; mergeSlow drops it).
 	if data, err := os.ReadFile(a.CacheFile); err == nil {
 		if doc, err := parseRawObject(data); err == nil {
+			buckets := canonicalBuckets(bucketsOf(doc))
 			for _, c := range cacheRows(doc, float64(now.Unix()), r.maxAge()) {
-				if printed[c.ID] {
+				if raw, _ := buckets.get(c.ID); printed[c.ID] || retired(c.ID, raw, printed) {
 					continue
 				}
 				res.rows = append(res.rows, r.cacheBucket(c))

@@ -146,3 +146,35 @@ func TestSymlinkedConversationsAreNotUse(t *testing.T) {
 		t.Fatalf("cave LastUsed %v through a symlink, want zero", got)
 	}
 }
+
+// A model's pool that /usage printed before and leaves out now is retired:
+// it leaves the cache and the report. A pool only the statusline hook
+// reports stays, and so do the general pools.
+func TestRetiredPoolLeaves(t *testing.T) {
+	f := newFixture(t)
+	f.agy.out = []byte("Gemini Models\tWeekly Limit Remaining\t91%\t2030-01-01T00:00:00Z\n" +
+		"Claude and GPT models\tWeekly Limit Remaining\t6%\t2030-01-02T03:04:05Z\n")
+	snap, err := f.reader.Read(context.Background(), ref("m"), model.ReadOptions{Force: true, Now: func() time.Time { return time.Unix(2000000100, 0) }})
+	if err != nil {
+		t.Fatal(err)
+	}
+	keys := map[string]bool{}
+	for _, w := range snap.Windows {
+		keys[w.Key] = true
+	}
+	if keys["gemini-4-argon-weekly"] || !keys["gemini-4-argon-5h"] || !keys["gemini-5h"] || !keys["3p-weekly"] {
+		t.Fatalf("report windows %v: want the slow-written Argon weekly gone, the hook's Argon 5h and the general pools kept", keys)
+	}
+	data, err := os.ReadFile(filepath.Join(f.dir, "main-cache.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc, err := parseRawObject(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b := bucketsOf(doc)
+	if b.has("gemini-4-argon-weekly") || !b.has("gemini-4-argon-5h") || !b.has("gemini-5h") {
+		t.Fatalf("cache buckets after the run: %s", data)
+	}
+}

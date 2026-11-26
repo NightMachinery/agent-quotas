@@ -287,15 +287,39 @@ func cacheMetadata(path string) rawObject {
 	return o
 }
 
+// retired reports whether a cached bucket is a model's own pool that an
+// earlier `agy -p /usage` printed (source "slow") and this run (printed)
+// left out. /usage lists such a pool only while the model is in
+// use, so the pool is gone: it leaves the cache and the report, instead of
+// showing its last reading for ever. The general pools are never retired,
+// nor a pool only the statusline hook reports.
+func retired(id string, bucket json.RawMessage, printed map[string]bool) bool {
+	if printed[id] || generalFamily(id) != "" {
+		return false
+	}
+	b, err := parseRawObject(bucket)
+	return err == nil && stringOr(b, "source", "") == "slow"
+}
+
 // mergeSlow is h-agy-status-cache-merge: the slow path's rows go into the
 // cache per bucket (never wholesale), stamped with source "slow" and the
-// capture time; every other key and bucket is kept. The write is atomic.
+// capture time; every other key and bucket is kept, except the model pools
+// this run retired. The write is atomic.
 func mergeSlow(path string, rows []usageRow, now int64) error {
 	var prev rawObject
 	if data, err := os.ReadFile(path); err == nil {
 		prev, _ = parseRawObject(data) // a corrupt cache costs its old buckets, not this write
 	}
-	buckets := canonicalBuckets(bucketsOf(prev))
+	printed := map[string]bool{}
+	for _, r := range rows {
+		printed[r.BucketID] = true
+	}
+	var buckets rawObject
+	for _, f := range canonicalBuckets(bucketsOf(prev)) {
+		if !retired(f.Key, f.Value, printed) {
+			buckets = append(buckets, f)
+		}
+	}
 	for _, r := range rows {
 		if r.BucketID == "" {
 			continue
