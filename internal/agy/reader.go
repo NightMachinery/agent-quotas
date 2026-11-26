@@ -406,7 +406,8 @@ func (r *Reader) refreshIfUsed(ctx context.Context, a Account, rows []cacheRow, 
 		s = 300 // a config built without config.Load's defaults
 	}
 	interval := time.Duration(s) * time.Second
-	if used.IsZero() || !used.After(time.Unix(int64(newest), 0)) || now.Sub(time.Unix(int64(newest), 0)) < interval {
+	// Compared in whole seconds, as captures are stamped: see slow.
+	if used.IsZero() || used.Unix() <= int64(newest) || now.Sub(time.Unix(int64(newest), 0)) < interval {
 		return readResult{}, false
 	}
 	r.mu.Lock()
@@ -465,6 +466,7 @@ func (r *Reader) slow(ctx context.Context, a Account, now time.Time, why string)
 	r.lastSlow[a.Name] = now
 	r.mu.Unlock()
 	note := model.Note{Severity: model.Info, Text: why}
+	start := time.Now()
 	rows, err := r.runUsage(ctx, a)
 	if err != nil {
 		var se *slowError
@@ -474,7 +476,13 @@ func (r *Reader) slow(ctx context.Context, a Account, now time.Time, why string)
 		}
 		return readResult{source: "slow", notes: []model.Note{note}, err: err, exit: exit}
 	}
-	res := readResult{source: "slow", notes: []model.Note{note}, fetched: model.F(float64(now.Unix()))}
+	// The reading is stamped when the run ends, not when it starts: agy
+	// touches the account's conversations while it runs, and a capture
+	// older than that touch would read as use since the cache was written,
+	// so refreshIfUsed would start the slow path again every
+	// active_refresh_s, for ever.
+	done := now.Add(time.Since(start))
+	res := readResult{source: "slow", notes: []model.Note{note}, fetched: model.F(float64(done.Unix()))}
 	for _, row := range rows {
 		res.rows = append(res.rows, LegacyBucket{
 			Group: row.Group, Label: row.Label, RemainingPercent: row.Remaining, ResetsAt: float64(row.ResetsAt),
@@ -484,7 +492,7 @@ func (r *Reader) slow(ctx context.Context, a Account, now time.Time, why string)
 	// The slow path is the authority on the weekly pools, so the cache
 	// keeps what it learned. Best effort: a cache we could not update must
 	// not cost the reading we already have.
-	if err := mergeSlow(a.CacheFile, rows, now.Unix()); err != nil {
+	if err := mergeSlow(a.CacheFile, rows, done.Unix()); err != nil {
 		res.notes = append(res.notes, model.Note{Severity: model.Warning, Text: "could not update the statusline cache: " + err.Error()})
 	}
 	return res

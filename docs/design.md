@@ -947,7 +947,9 @@ differs:
   the cache's newest capture, a normal read takes the slow path instead, at
   most once per `active_refresh_s` (300 s; -1 turns it off). The slow path
   rewrites the cache, so that capture time spaces the runs; a failed run
-  serves the old cache. The old flat bucket
+  serves the old cache. `agy -p /usage` itself touches `conversations` while
+  it runs, so the slow path stamps its reading when the run ends; stamped at
+  the start, every run would look like use and start the next one. The old flat bucket
   array (`agy_status_json_p=y`) is not ported.
 - Native engine: one extra dotfile, `.blocked-state` (the blocked groups and
   their resets, for per-family grace); an unreadable idle time or a failed

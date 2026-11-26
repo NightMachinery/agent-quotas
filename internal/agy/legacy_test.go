@@ -29,12 +29,17 @@ type fakeAgy struct {
 	exit  map[string]int
 	out   []byte
 	sleep time.Duration
+	// onRun, when set, runs inside every call, as agy's own side effects do.
+	onRun func(procx.Cmd)
 }
 
 func (f *fakeAgy) Run(ctx context.Context, c procx.Cmd) (procx.Result, error) {
 	f.mu.Lock()
 	f.calls = append(f.calls, c)
 	f.mu.Unlock()
+	if f.onRun != nil {
+		f.onRun(c)
+	}
 	account := envValue(c.Env, "AGY_ACCOUNT_ID")
 	if code := f.exit[account]; code != 0 {
 		return procx.Result{ExitCode: code}, errors.New("agy: exit status 3")

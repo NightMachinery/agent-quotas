@@ -6,6 +6,9 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/NightMachinery/agent-quotas/internal/model"
+	"github.com/NightMachinery/agent-quotas/internal/procx"
 )
 
 // agy run without a statusline (Paseo's `agy acp`, `agy -p`) spends quota
@@ -47,6 +50,34 @@ func TestUseSinceTheCacheRefreshes(t *testing.T) {
 	// The live read rewrote the cache, so the next read serves it.
 	if snap, _ := f.reader.Read(ctx, ref("m"), at(newest+1010)); snap.Source != "statusline" || len(f.agy.calls) != 1 {
 		t.Fatalf("source %q calls %d, want the refreshed cache", snap.Source, len(f.agy.calls))
+	}
+}
+
+// `agy -p /usage` touches the account's conversations while it runs. That
+// touch is the slow path's own, not use: the reading it wrote is stamped
+// after it, so the next reads serve the cache instead of starting agy every
+// active_refresh_s.
+func TestSlowRunIsNotUse(t *testing.T) {
+	f := newFixture(t)
+	f.cfg.Agy.ActiveRefreshS = 300
+	a := ResolveAccount(f.cfg.Agy.Accounts[indexOf(f.cfg, "m")])
+	dir := filepath.Join(a.CLIDir(), "conversations")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	const start = 2100000000
+	f.agy.onRun = func(procx.Cmd) {
+		ts := time.Unix(start, 500_000_000) // during the run, after it began
+		os.Chtimes(dir, ts, ts)
+	}
+	ctx := context.Background()
+	if snap, err := f.reader.Read(ctx, ref("m"), model.ReadOptions{Force: true, Now: func() time.Time { return time.Unix(start, 0) }}); err != nil || snap.Source != "slow" {
+		t.Fatalf("forced read: source %q err %v", snap.Source, err)
+	}
+	for _, later := range []int64{start + 301, start + 3000} {
+		if snap, _ := f.reader.Read(ctx, ref("m"), at(later)); snap.Source != "statusline" || f.agy.count() != 1 {
+			t.Fatalf("at +%ds: source %q after %d calls, want the cache", later-start, snap.Source, f.agy.count())
+		}
 	}
 }
 
