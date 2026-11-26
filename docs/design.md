@@ -191,7 +191,8 @@ Window:
   "resets_at": 1789003600,         // Unix seconds or null
   "window_minutes": 300,           // or null
   "scope": "account",              // account | model | reserve
-  "blocking": false                // at or above the full threshold
+  "blocking": false,               // at or above the full threshold
+  "captured_at": 1789000000.0      // when this window was read; only where the reader knows it per window (Antigravity)
 }
 ```
 
@@ -960,8 +961,11 @@ differs:
   hand) also re-reads an account nobody uses: when its newest reading is
   older than `stale_refresh_s` (an hour; -1 turns it off), or a pool's reset
   has passed since that pool was read (one run, `blocked_grace_s` after the
-  reset). A failed run waits a full interval. The old flat bucket
-  array (`agy_status_json_p=y`) is not ported.
+  reset). A failed run waits a full interval. An account's `fetched_at`,
+  and the age its report header shows, is its newest reading (the old tool
+  showed the oldest); a window read over an hour before that newest one shows its own
+  age on its line ("read 2d 14h ago"), in `status` and in `agy-status`. The
+  old flat bucket array (`agy_status_json_p=y`) is not ported.
 - Native engine: one extra dotfile, `.blocked-state` (the blocked groups and
   their resets, for per-family grace); an unreadable idle time or a failed
   live listing holds back rather than acts; scopes of a second Codex home are

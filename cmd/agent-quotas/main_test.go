@@ -62,6 +62,26 @@ func TestWriteStatus(t *testing.T) {
 	}
 }
 
+// A window read long before the account's newest reading says its own age;
+// the others do not.
+func TestWriteStatusOldWindow(t *testing.T) {
+	now := time.Unix(1_800_000_000, 0)
+	fresh, old := model.Unix(now.Add(-3*time.Minute)), model.Unix(now.Add(-62*time.Hour))
+	doc := model.Document{Accounts: []model.Snapshot{{
+		ID: "agy:m", Name: "m", Verdict: model.Usable, Source: "statusline", FetchedAt: model.F(fresh),
+		Windows: []model.Window{
+			{Family: "Gemini", Window: "weekly", UsedPercent: model.F(0), CapturedAt: model.F(fresh)},
+			{Family: "Gemini 9", Window: "weekly", UsedPercent: model.F(0), CapturedAt: model.F(old)},
+		},
+	}}}
+	var b bytes.Buffer
+	writeStatus(&b, doc, now)
+	lines := strings.Split(b.String(), "\n")
+	if !strings.Contains(lines[0], "statusline 3m ago") || strings.Contains(lines[1], "read ") || !strings.HasSuffix(lines[2], "read 2d 14h ago") {
+		t.Fatalf("status:\n%s", b.String())
+	}
+}
+
 func TestQuotaAdapterCodexAccount(t *testing.T) {
 	root := t.TempDir()
 	def := filepath.Join(root, "codex")

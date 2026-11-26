@@ -246,8 +246,14 @@ func TestSnapshotVerdicts(t *testing.T) {
 	if snap.Verdict != model.Usable || snap.Source != "statusline" || snap.Plan == nil || *snap.Plan != "Google AI Pro" {
 		t.Errorf("m: %+v", snap)
 	}
-	if snap.FetchedAt == nil || *snap.FetchedAt != 1999990000 {
-		t.Errorf("fetched_at should be the oldest capture: %v", snap.FetchedAt)
+	// The reading's time is its newest capture; each window keeps its own.
+	if snap.FetchedAt == nil || *snap.FetchedAt != 1999990300 {
+		t.Errorf("fetched_at should be the newest capture: %v", snap.FetchedAt)
+	}
+	for _, w := range snap.Windows {
+		if w.Key == "gemini-5h" && (w.CapturedAt == nil || *w.CapturedAt != 1999990000) {
+			t.Errorf("gemini-5h captured_at %v, want its own capture", w.CapturedAt)
+		}
 	}
 	scopes := map[string]string{}
 	for _, w := range snap.Windows {
@@ -259,7 +265,7 @@ func TestSnapshotVerdicts(t *testing.T) {
 	if scopes["gemini-5h"] != model.ScopeAccount || scopes["gemini-4-argon-weekly"] != model.ScopeModel {
 		t.Errorf("scopes %v", scopes)
 	}
-	if !strings.Contains(snap.Notes[0].Text, "Cache 6m old") || !strings.Contains(snap.Notes[0].Text, "some rows undated") {
+	if !strings.Contains(snap.Notes[0].Text, "Cache 1m old") || !strings.Contains(snap.Notes[0].Text, "some rows undated") {
 		t.Errorf("provenance note %q", snap.Notes[0].Text)
 	}
 

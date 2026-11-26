@@ -1,8 +1,8 @@
-m                 auth stored    Google AI Pro  cache 2h, some un…  masked@exam…
+m                 auth stored    Google AI Pro  cache <1m, some u…  masked@exam…
   Gemini          5h      █░░░░░░░░░     6%  resets in 1h 25m
   Gemini          weekly  █░░░░░░░░░     6%  resets in 4d 7h
   Gemini 4 Argon  5h      ███░░░░░░░  33.4%  reset 1h ago
-  Gemini 4 Argon  weekly  ██████████    95%  resets in 12m
+  Gemini 4 Argon  weekly  ██████████    95%  resets in 12m      read 2h ago
   Claude/GPT      weekly  ████████░░    75%  resets in 2d 11h
   Future          Daily   ░░░░░░░░░░     0%  reset unknown
   Odd Pool        weekly  ██████████   100%  resets in 10m

@@ -58,11 +58,11 @@
 
 [1;34mAntigravity[0m  [2m───────────────────────────────────────────────────────────────────[0m
 
-[1mm[0m                 auth stored    Google AI Pro  [2mcache 2h, some un…[0m  [2mmasked@exam…[0m
+[1mm[0m                 auth stored    Google AI Pro  [2mcache <1m, some u…[0m  [2mmasked@exam…[0m
   Gemini          5h      [32m█░░░░░░░░░[0m  [32m   6%[0m  resets in 1h 25m
   Gemini          weekly  [32m█░░░░░░░░░[0m  [32m   6%[0m  resets in 4d 7h
   Gemini 4 Argon  5h      [32m███░░░░░░░[0m  [32m33.4%[0m  reset 1h ago
-  Gemini 4 Argon  weekly  [31m██████████[0m  [31m  95%[0m  resets in 12m
+  Gemini 4 Argon  weekly  [31m██████████[0m  [31m  95%[0m  resets in 12m      [2mread 2h ago[0m
   Claude/GPT      weekly  [33m████████░░[0m  [33m  75%[0m  resets in 2d 11h
   Future          Daily   [32m░░░░░░░░░░[0m  [32m   0%[0m  reset unknown
   Odd Pool        weekly  [31m██████████[0m  [31m 100%[0m  resets in 10m

@@ -344,22 +344,21 @@ func (r *Reader) quota(ctx context.Context, a Account, force bool, now time.Time
 		return res
 	}
 	res := readResult{source: "statusline", captures: map[string]float64{}}
-	oldest, undated := int64(0), false
+	undated := false
 	var sources []string
 	seen := map[string]bool{}
-	var earliest *float64
+	// The reading's time is its newest capture: one pool read long before
+	// the rest says its own age on its line (Window.CapturedAt) instead of
+	// making the whole reading look that old.
+	var newest *float64
 	for _, row := range rows {
 		res.rows = append(res.rows, r.cacheBucket(row))
 		if row.Captured < 0 {
 			undated = true
 		} else {
 			res.captures[row.ID] = row.Captured
-			age := now.Unix() - int64(row.Captured)
-			if age > oldest {
-				oldest = age
-			}
-			if earliest == nil || row.Captured < *earliest {
-				earliest = model.F(row.Captured)
+			if newest == nil || row.Captured > *newest {
+				newest = model.F(row.Captured)
 			}
 		}
 		if !seen[row.Source] {
@@ -375,8 +374,12 @@ func (r *Reader) quota(ctx context.Context, a Account, force bool, now time.Time
 	if undated {
 		detail += "; some rows undated"
 	}
-	res.notes = append(res.notes, model.Note{Severity: model.Info, Text: "Cache " + ageFmt(int(oldest)) + " old (" + detail + ")"})
-	res.fetched = earliest
+	age := 0
+	if newest != nil {
+		age = int(now.Unix() - int64(*newest))
+	}
+	res.notes = append(res.notes, model.Note{Severity: model.Info, Text: "Cache " + ageFmt(age) + " old (" + detail + ")"})
+	res.fetched = newest
 	return res
 }
 
@@ -706,6 +709,11 @@ func (r *Reader) snapshot(a Account, legacy LegacyAccount, res readResult, now t
 		}
 		if b.ResetsAt > 0 && finite(b.ResetsAt) {
 			w.ResetsAt = model.F(b.ResetsAt)
+		}
+		if c, ok := res.captures[b.BucketID]; ok {
+			w.CapturedAt = model.F(c)
+		} else if b.Source == "live" && res.fetched != nil {
+			w.CapturedAt = model.F(*res.fetched)
 		}
 		switch window {
 		case "5h":

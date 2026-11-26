@@ -164,7 +164,7 @@ func TestHumanReportFromSnapshots(t *testing.T) {
 		t.Fatal(err)
 	}
 	text := b.String()
-	for _, want := range []string{"m  ", "cache 6m, some undated", "Gemini 4 Argon", "Claude/GPT", "agy-acc-login fm2"} {
+	for _, want := range []string{"m  ", "cache 1m, some undated", "Gemini 4 Argon", "Claude/GPT", "agy-acc-login fm2"} {
 		if !strings.Contains(text, want) {
 			t.Errorf("missing %q in\n%s", want, text)
 		}

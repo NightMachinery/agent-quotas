@@ -62,6 +62,9 @@ type Window struct {
 	WindowMinutes *float64 `json:"window_minutes"`
 	Scope         string   `json:"scope"`
 	Blocking      bool     `json:"blocking"`
+	// CapturedAt is when this window was read, where the reader knows it
+	// per window (Antigravity: the cache keeps a capture time per bucket).
+	CapturedAt *float64 `json:"captured_at,omitempty"`
 }
 
 // PollInfo is the poller's bookkeeping for one account.

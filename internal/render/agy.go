@@ -156,14 +156,7 @@ func provenance(account *Object, now float64) string {
 		parts = append(parts, "live")
 	}
 	if sources["cache"] {
-		var cached *Object
-		if path, ok := account.Get("_display_cache_file").(string); ok && account.Has("_display_cache_file") {
-			if data, err := os.ReadFile(path); err == nil {
-				if doc, err := Decode(data); err == nil {
-					cached = asObject(asObject(doc).Get("buckets"))
-				}
-			}
-		}
+		captureOf := cacheCaptures(account)
 		var ages []float64
 		undated := false
 		for _, b := range buckets {
@@ -171,27 +164,7 @@ func provenance(account *Object, now float64) string {
 			if s, _ := bucket.Get("source").(string); s != "cache" {
 				continue
 			}
-			var candidates []any
-			identity, isString := bucket.Get("bucket_id").(string)
-			if isString {
-				candidates = append(candidates, cached.Get(identity))
-				if alias, ok := cacheAliases[identity]; ok {
-					candidates = append(candidates, cached.Get(alias))
-				}
-			}
-			best, have := 0.0, false
-			for _, c := range candidates {
-				co := asObject(c)
-				if co == nil {
-					continue
-				}
-				if n, ok := asNumLoose(co.Get("captured_at")); ok && finite(n.F) {
-					if !have || n.F > best {
-						best, have = n.F, true
-					}
-				}
-			}
-			if have {
+			if best, have := captureOf(bucket); have {
 				ages = append(ages, math.Max(0, now-best))
 			} else {
 				undated = true
@@ -199,9 +172,11 @@ func provenance(account *Object, now float64) string {
 		}
 		stamp := "age unknown"
 		if len(ages) > 0 {
+			// The newest reading: a pool read long before the rest says
+			// its own age on its line (accountModel).
 			age := ages[0]
 			for _, a := range ages[1:] {
-				age = math.Max(age, a)
+				age = math.Min(age, a)
 			}
 			if age < 60 {
 				stamp = "<1m"
@@ -225,6 +200,47 @@ type windowView struct {
 	Family, Window string
 	UsedPercent    Num
 	ResetsAt       any // Num or nil
+	// Old is "read 2d 14h ago" for a window read over oldReadingS before
+	// the account's newest reading; the report only, not the JSON.
+	Old string
+}
+
+// oldReadingS is how much older than an account's newest reading a window's
+// own reading must be to say its age on its line.
+const oldReadingS = 3600
+
+// cacheCaptures returns the captured_at of a cache bucket of account, as
+// its statusline cache (_display_cache_file) has it, under its id or the
+// statusline's alias for it, the later of the two.
+func cacheCaptures(account *Object) func(bucket *Object) (float64, bool) {
+	var cached *Object
+	if path, ok := account.Get("_display_cache_file").(string); ok && account.Has("_display_cache_file") {
+		if data, err := os.ReadFile(path); err == nil {
+			if doc, err := Decode(data); err == nil {
+				cached = asObject(asObject(doc).Get("buckets"))
+			}
+		}
+	}
+	return func(bucket *Object) (float64, bool) {
+		var candidates []any
+		if identity, ok := bucket.Get("bucket_id").(string); ok {
+			candidates = append(candidates, cached.Get(identity))
+			if alias, ok := cacheAliases[identity]; ok {
+				candidates = append(candidates, cached.Get(alias))
+			}
+		}
+		best, have := 0.0, false
+		for _, c := range candidates {
+			co := asObject(c)
+			if co == nil {
+				continue
+			}
+			if n, ok := asNumLoose(co.Get("captured_at")); ok && finite(n.F) && (!have || n.F > best) {
+				best, have = n.F, true
+			}
+		}
+		return best, have
+	}
 }
 
 type noteView struct{ Severity, Text string }
@@ -346,6 +362,9 @@ func pyTypeName(v any) string {
 
 func accountModel(account *Object, now float64) accountView {
 	var windows []windowView
+	captureOf := cacheCaptures(account)
+	var captures []float64 // per window; -1 when unknown
+	newest := -1.0
 	for _, b := range asList(account.Get("buckets")) {
 		bucket := asObject(b)
 		if bucket == nil {
@@ -374,7 +393,23 @@ func accountModel(account *Object, now float64) accountView {
 		if n, ok := asNumLoose(reset); ok && finite(n.F) && n.F > 0 {
 			resets = reset
 		}
-		windows = append(windows, windowView{family, window, clampUsed(used), resets})
+		captured := -1.0
+		switch src, _ := bucket.Get("source").(string); src {
+		case "live":
+			captured = now
+		case "cache":
+			if c, ok := captureOf(bucket); ok {
+				captured = c
+			}
+		}
+		newest = math.Max(newest, captured)
+		captures = append(captures, captured)
+		windows = append(windows, windowView{family, window, clampUsed(used), resets, ""})
+	}
+	for i, c := range captures {
+		if c >= 0 && newest-c > oldReadingS {
+			windows[i].Old = "read " + Duration(math.Max(0, now-c)) + " ago"
+		}
 	}
 	sort.SliceStable(windows, func(i, j int) bool { return orderOf(windows[i]).less(orderOf(windows[j])) })
 	label := Clean(or(account.Get("label"), account.Get("account")))
@@ -428,6 +463,7 @@ type entry struct {
 	used           float64
 	relative       string
 	stamp          string
+	old            string
 }
 
 func renderAccounts(accounts []*Object, columns int, color bool, absolute string, now float64, loc *time.Location) string {
@@ -455,7 +491,7 @@ func renderAccounts(accounts []*Object, columns int, color bool, absolute string
 		var entries []entry
 		for _, w := range view.Windows {
 			rel, stamp := resetText(w.ResetsAt, now, loc)
-			entries = append(entries, entry{w.Family, w.Window, w.UsedPercent.F, rel, stamp})
+			entries = append(entries, entry{w.Family, w.Window, w.UsedPercent.F, rel, stamp, w.Old})
 		}
 		rows = append(rows, entries...)
 		preps = append(preps, prepared{view, entries})
@@ -569,6 +605,9 @@ func renderAccounts(accounts []*Object, columns int, color bool, absolute string
 				paint(bar, level) + "  " + paint(Pad(percent, 5, true), level) + "  " + Pad(e.relative, resetWidth, false)
 			if showAbsolute && e.stamp != "" {
 				line += "   " + dim + e.stamp + off
+			}
+			if e.old != "" {
+				line += "   " + dim + e.old + off
 			}
 			out = append(out, rstrip(line))
 		}

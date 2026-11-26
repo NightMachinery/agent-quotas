@@ -69,6 +69,12 @@ func writeStatus(w io.Writer, doc model.Document, now time.Time) {
 				" (in "+shortDuration(model.Time(*s.BlockedUntil).Sub(now))+")")
 		}
 		fmt.Fprintln(w, strings.TrimRight(head+"  "+strings.Join(meta, "  "), " "))
+		newest := 0.0
+		for _, win := range s.Windows {
+			if win.CapturedAt != nil && *win.CapturedAt > newest {
+				newest = *win.CapturedAt
+			}
+		}
 		for _, win := range s.Windows {
 			used := "   ?"
 			if win.UsedPercent != nil {
@@ -82,7 +88,11 @@ func writeStatus(w io.Writer, doc model.Document, now time.Time) {
 			if win.Blocking {
 				mark = "!"
 			}
-			fmt.Fprintf(w, "  %s %-16s %-7s %s  %s\n", mark, clip(win.Family, 16), clip(win.Window, 7), used, reset)
+			line := fmt.Sprintf("  %s %-16s %-7s %s  %s", mark, clip(win.Family, 16), clip(win.Window, 7), used, reset)
+			if old := oldReading(win.CapturedAt, newest, now); old != "" {
+				line = fmt.Sprintf("%-50s  %s", line, old)
+			}
+			fmt.Fprintln(w, strings.TrimRight(line, " "))
 		}
 		if s.Error != nil {
 			fmt.Fprintf(w, "  error: %s\n", *s.Error)
@@ -93,6 +103,19 @@ func writeStatus(w io.Writer, doc model.Document, now time.Time) {
 			}
 		}
 	}
+}
+
+// oldReadingS is how much older than the account's newest reading a
+// window's own reading must be to say its age on its line.
+const oldReadingS = 3600
+
+// oldReading is "read 2d ago" for a window read over oldReadingS before the
+// account's newest reading, else "".
+func oldReading(captured *float64, newest float64, now time.Time) string {
+	if captured == nil || newest-*captured <= oldReadingS {
+		return ""
+	}
+	return "read " + shortDuration(now.Sub(model.Time(*captured))) + " ago"
 }
 
 func clip(s string, n int) string {

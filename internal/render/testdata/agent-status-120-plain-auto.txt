@@ -58,11 +58,11 @@ silent                unavailable
 
 Antigravity  ───────────────────────────────────────────────────────────────────────────────────────────────────────────
 
-m                 auth stored    Google AI Pro  cache 2h, some undated    masked@example.test
+m                 auth stored    Google AI Pro  cache <1m, some undated   masked@example.test
   Gemini          5h      █░░░░░░░░░     6%  resets in 1h 25m   Tue 14 Nov 23:38 UTC
   Gemini          weekly  █░░░░░░░░░     6%  resets in 4d 7h    Sun 19 Nov 05:13 UTC
   Gemini 4 Argon  5h      ███░░░░░░░  33.4%  reset 1h ago       Tue 14 Nov 21:13 UTC
-  Gemini 4 Argon  weekly  ██████████    95%  resets in 12m      Tue 14 Nov 22:25 UTC
+  Gemini 4 Argon  weekly  ██████████    95%  resets in 12m      Tue 14 Nov 22:25 UTC   read 2h ago
   Claude/GPT      weekly  ████████░░    75%  resets in 2d 11h   Fri 17 Nov 09:13 UTC
   Future          Daily   ░░░░░░░░░░     0%  reset unknown
   Odd Pool        weekly  ██████████   100%  resets in 10m      Tue 14 Nov 22:23 UTC
