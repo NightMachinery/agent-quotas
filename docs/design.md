@@ -949,7 +949,10 @@ differs:
   rewrites the cache, so that capture time spaces the runs; a failed run
   serves the old cache. `agy -p /usage` itself touches `conversations` while
   it runs, so the slow path stamps its reading when the run ends; stamped at
-  the start, every run would look like use and start the next one. The old flat bucket
+  the start, every run would look like use and start the next one. agy lists
+  a model's own pool (Gemini 4 Argon) only some of the time, so a slow read
+  keeps each cached pool the run did not print, as a `cache` row, where the
+  old tool showed only the run's rows. The old flat bucket
   array (`agy_status_json_p=y`) is not ported.
 - Native engine: one extra dotfile, `.blocked-state` (the blocked groups and
   their resets, for per-family grace); an unreadable idle time or a failed

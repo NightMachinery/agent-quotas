@@ -58,6 +58,26 @@
         "source": "live",
         "bucket_id": "future-model-daily-limit",
         "used_percent": 58
+      },
+      {
+        "group": "Gemini Models",
+        "label": "5h Limit Remaining",
+        "remaining_percent": 98.5,
+        "resets_at": 2000000000,
+        "resets_at_iso": "2033-05-18 03:33:20+00:00",
+        "source": "cache",
+        "bucket_id": "gemini-5h",
+        "used_percent": 1.5
+      },
+      {
+        "group": "Future Model",
+        "label": "5h Limit Remaining",
+        "remaining_percent": 50,
+        "resets_at": 0,
+        "resets_at_iso": "1970-01-01 00:00:00+00:00",
+        "source": "cache",
+        "bucket_id": "future-model-5h",
+        "used_percent": 50
       }
     ]
   }

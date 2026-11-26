@@ -317,10 +317,7 @@ func (r *Reader) quota(ctx context.Context, a Account, force bool, now time.Time
 	if err != nil {
 		return r.fallback(ctx, a, now, "agy (no cache; run `agy-statusline-install')")
 	}
-	maxAge := -1
-	if r.cfg.Agy.StatuslineMaxAgeS != nil {
-		maxAge = *r.cfg.Agy.StatuslineMaxAgeS
-	}
+	maxAge := r.maxAge()
 	doc, perr := parseRawObject(data)
 	var rows []cacheRow
 	if perr == nil {
@@ -341,15 +338,7 @@ func (r *Reader) quota(ctx context.Context, a Account, force bool, now time.Time
 	seen := map[string]bool{}
 	var earliest *float64
 	for _, row := range rows {
-		group, label := bucketDisplayNames(row.ID)
-		if row.Group != "" && row.Label != "" {
-			group, label = row.Group, row.Label
-		}
-		res.rows = append(res.rows, LegacyBucket{
-			Group: group, Label: label, RemainingPercent: row.Remaining, ResetsAt: row.ResetsAt,
-			ResetsAtISO: rfc3339s(row.ResetsAt, r.loc()), Source: "cache", BucketID: row.ID,
-			UsedPercent: 100 - row.Remaining,
-		})
+		res.rows = append(res.rows, r.cacheBucket(row))
 		if row.Captured < 0 {
 			undated = true
 		} else {
@@ -378,6 +367,28 @@ func (r *Reader) quota(ctx context.Context, a Account, force bool, now time.Time
 	res.notes = append(res.notes, model.Note{Severity: model.Info, Text: "Cache " + ageFmt(int(oldest)) + " old (" + detail + ")"})
 	res.fetched = earliest
 	return res
+}
+
+// maxAge is statusline_max_age_s: how old a cached bucket may be and still
+// be served; below 0, any age.
+func (r *Reader) maxAge() int {
+	if r.cfg.Agy.StatuslineMaxAgeS != nil {
+		return *r.cfg.Agy.StatuslineMaxAgeS
+	}
+	return -1
+}
+
+// cacheBucket is a cached bucket as a report row.
+func (r *Reader) cacheBucket(row cacheRow) LegacyBucket {
+	group, label := bucketDisplayNames(row.ID)
+	if row.Group != "" && row.Label != "" {
+		group, label = row.Group, row.Label
+	}
+	return LegacyBucket{
+		Group: group, Label: label, RemainingPercent: row.Remaining, ResetsAt: row.ResetsAt,
+		ResetsAtISO: rfc3339s(row.ResetsAt, r.loc()), Source: "cache", BucketID: row.ID,
+		UsedPercent: 100 - row.Remaining,
+	}
 }
 
 // refreshIfUsed runs the slow path when the account was used after the
@@ -482,12 +493,31 @@ func (r *Reader) slow(ctx context.Context, a Account, now time.Time, why string)
 	// so refreshIfUsed would start the slow path again every
 	// active_refresh_s, for ever.
 	done := now.Add(time.Since(start))
-	res := readResult{source: "slow", notes: []model.Note{note}, fetched: model.F(float64(done.Unix()))}
+	res := readResult{source: "slow", notes: []model.Note{note}, fetched: model.F(float64(done.Unix())), captures: map[string]float64{}}
+	printed := map[string]bool{}
 	for _, row := range rows {
 		res.rows = append(res.rows, LegacyBucket{
 			Group: row.Group, Label: row.Label, RemainingPercent: row.Remaining, ResetsAt: float64(row.ResetsAt),
 			ResetsAtISO: row.ISO, Source: "live", BucketID: row.BucketID, UsedPercent: 100 - row.Remaining,
 		})
+		printed[row.BucketID] = true
+	}
+	// agy lists a model's own pool (Gemini 4 Argon) only some of the time.
+	// A pool this run did not print stays in the report as the cache has
+	// it, as a cache read would show it, instead of vanishing until the
+	// next one.
+	if data, err := os.ReadFile(a.CacheFile); err == nil {
+		if doc, err := parseRawObject(data); err == nil {
+			for _, c := range cacheRows(doc, float64(now.Unix()), r.maxAge()) {
+				if printed[c.ID] {
+					continue
+				}
+				res.rows = append(res.rows, r.cacheBucket(c))
+				if c.Captured >= 0 {
+					res.captures[c.ID] = c.Captured
+				}
+			}
+		}
 	}
 	// The slow path is the authority on the weekly pools, so the cache
 	// keeps what it learned. Best effort: a cache we could not update must
@@ -596,8 +626,8 @@ func (r *Reader) snapshot(a Account, legacy LegacyAccount, res readResult, now t
 		// window now: it no longer blocks (the old armed job trusted the
 		// reset time the same way), and the snapshot says it is stale.
 		if w.Blocking && w.ResetsAt != nil && *w.ResetsAt <= nowS {
-			captured, ok := res.captures[b.BucketID]
-			if res.source == "slow" || !ok || captured < *w.ResetsAt {
+			captured, ok := res.captures[b.BucketID] // live rows have none
+			if !ok || captured < *w.ResetsAt {
 				w.Blocking = false
 				expired = append(expired, family+" "+window)
 			}
