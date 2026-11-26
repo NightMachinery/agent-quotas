@@ -81,6 +81,37 @@ func TestSlowRunIsNotUse(t *testing.T) {
 	}
 }
 
+// cave's conversations link to m's, so cave's slow run touches them. That
+// is the reader's own run, not use of m.
+func TestAnotherAccountsRunIsNotUse(t *testing.T) {
+	f := newFixture(t)
+	f.cfg.Agy.ActiveRefreshS = 300
+	m := ResolveAccount(f.cfg.Agy.Accounts[indexOf(f.cfg, "m")])
+	cave := ResolveAccount(f.cfg.Agy.Accounts[indexOf(f.cfg, "cave")])
+	shared := filepath.Join(m.CLIDir(), "conversations")
+	if err := os.MkdirAll(shared, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(shared, filepath.Join(cave.CLIDir(), "conversations")); err != nil {
+		t.Fatal(err)
+	}
+	const newest = 1999990300 // m's newest capture
+	const run = newest + 1000
+	f.agy.onRun = func(c procx.Cmd) {
+		if envValue(c.Env, "AGY_ACCOUNT_ID") == "cave" {
+			ts := time.Unix(run, 0)
+			os.Chtimes(shared, ts, ts)
+		}
+	}
+	ctx := context.Background()
+	if _, err := f.reader.Read(ctx, ref("cave"), model.ReadOptions{Force: true, Now: func() time.Time { return time.Unix(run, 0) }}); err != nil {
+		t.Fatal(err)
+	}
+	if snap, _ := f.reader.Read(ctx, ref("m"), at(run+400)); snap.Source != "statusline" || f.agy.count() != 1 {
+		t.Fatalf("m after cave's run: source %q, %d calls; want the cache", snap.Source, f.agy.count())
+	}
+}
+
 func TestActiveRefreshOff(t *testing.T) {
 	f := newFixture(t)
 	f.cfg.Agy.ActiveRefreshS = -1

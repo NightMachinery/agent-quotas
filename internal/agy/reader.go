@@ -159,11 +159,14 @@ type Reader struct {
 
 	mu       sync.Mutex
 	lastSlow map[string]time.Time
+	// runs is each account's latest slow-path run, from start to end (zero
+	// while it runs), for ownTouch.
+	runs map[string][2]time.Time
 }
 
 // NewReader returns a reader over cfg.Agy.Accounts that runs agy with run.
 func NewReader(cfg *config.Config, run procx.Runner) *Reader {
-	return &Reader{cfg: cfg, run: run, lastSlow: map[string]time.Time{}}
+	return &Reader{cfg: cfg, run: run, lastSlow: map[string]time.Time{}, runs: map[string][2]time.Time{}}
 }
 
 // Provider is "agy".
@@ -420,6 +423,9 @@ func (r *Reader) refreshIfUsed(ctx context.Context, a Account, rows []cacheRow, 
 		return readResult{}, false
 	}
 	used := a.LastUsed()
+	if r.ownTouch(used) {
+		return readResult{}, false
+	}
 	s := r.cfg.Agy.ActiveRefreshS
 	if s == 0 {
 		s = 300 // a config built without config.Load's defaults
@@ -495,6 +501,26 @@ func (r *Reader) refreshIfStale(ctx context.Context, a Account, rows []cacheRow,
 	return res, true
 }
 
+// ownTouch reports whether t, an account's last use, fell during one of
+// this reader's slow-path runs, of any account: `agy -p /usage` touches the
+// conversations it runs against, and a second account's conversations may
+// link to the main account's, so its run would otherwise read as use of
+// the main account. Whole seconds, as file times and captures compare.
+func (r *Reader) ownTouch(t time.Time) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for _, run := range r.runs {
+		start, end := run[0].Unix(), run[1].Unix()
+		if run[1].IsZero() {
+			end = math.MaxInt64 // still running
+		}
+		if t.Unix() >= start && t.Unix() <= end {
+			return true
+		}
+	}
+	return false
+}
+
 // LastUsed is when agy last wrote to this account's state: a conversation
 // or its summary index, which every turn touches, TUI or not. Zero when
 // neither exists. Lstat, not Stat: a second account may symlink its
@@ -536,10 +562,14 @@ func (r *Reader) slow(ctx context.Context, a Account, now time.Time, why string)
 	}
 	r.mu.Lock()
 	r.lastSlow[a.Name] = now
+	r.runs[a.Name] = [2]time.Time{now}
 	r.mu.Unlock()
 	note := model.Note{Severity: model.Info, Text: why}
 	start := time.Now()
 	rows, err := r.runUsage(ctx, a)
+	r.mu.Lock()
+	r.runs[a.Name] = [2]time.Time{now, now.Add(time.Since(start))}
+	r.mu.Unlock()
 	if err != nil {
 		var se *slowError
 		exit := 1
