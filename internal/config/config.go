@@ -67,9 +67,14 @@ type Agy struct {
 	// ActiveRefreshS is the least time between two slow-path runs for an
 	// account used since its cache was written (agy without a statusline,
 	// such as Paseo's `agy acp`). 0 means the default, 300; -1 turns it off.
-	ActiveRefreshS int    `json:"active_refresh_s,omitempty"`
-	TimeoutS       int    `json:"timeout_s,omitempty"`
-	Binary         string `json:"agy_binary,omitempty"`
+	ActiveRefreshS int `json:"active_refresh_s,omitempty"`
+	// StaleRefreshS is how old the daemon lets an account's reading grow
+	// before it re-reads it with the slow path, used or not; it also
+	// re-reads once a pool's reset has passed since the reading. 0 means
+	// the default, 3600; -1 turns it off.
+	StaleRefreshS int    `json:"stale_refresh_s,omitempty"`
+	TimeoutS      int    `json:"timeout_s,omitempty"`
+	Binary        string `json:"agy_binary,omitempty"`
 }
 
 // Poll configures scheduling shared by all pollers.
@@ -293,6 +298,9 @@ func (c *Config) applyDefaults() {
 	}
 	if c.Agy.ActiveRefreshS == 0 {
 		c.Agy.ActiveRefreshS = 300
+	}
+	if c.Agy.StaleRefreshS == 0 {
+		c.Agy.StaleRefreshS = 3600
 	}
 	if c.Agy.TimeoutS == 0 {
 		c.Agy.TimeoutS = 90

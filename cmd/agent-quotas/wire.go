@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/NightMachinery/agent-quotas/internal/agy"
 	"github.com/NightMachinery/agent-quotas/internal/config"
 	"github.com/NightMachinery/agent-quotas/internal/daemon"
 	"github.com/NightMachinery/agent-quotas/internal/model"
@@ -19,7 +20,13 @@ func serve(ctx context.Context, cfg *config.Config, socket string) error {
 		return err
 	}
 	logger := log.New(os.Stderr, "agent-quotas: ", log.LstdFlags)
-	d := daemon.New(cfg, buildReaders(cfg), daemon.Options{Logger: logger})
+	readers := buildReaders(cfg)
+	for _, r := range readers {
+		if a, ok := r.(*agy.Reader); ok {
+			a.StaleRefresh = true // idle accounts' readings are re-read hourly
+		}
+	}
+	d := daemon.New(cfg, readers, daemon.Options{Logger: logger})
 	srv := daemon.NewServer(d)
 	engines, err := attachEngines(ctx, cfg, d, srv, logger)
 	if err != nil {

@@ -107,6 +107,7 @@ JSON, every key optional:
     "statusline_max_age_s": -1,
     "min_interval_s": 60,
     "active_refresh_s": 300,
+    "stale_refresh_s": 3600,
     "agy_binary": "agy"
   },
   "poll": {"force_floor_s": 5, "backoff_max_s": 1800},
@@ -952,7 +953,11 @@ differs:
   the start, every run would look like use and start the next one. agy lists
   a model's own pool (Gemini 4 Argon) only some of the time, so a slow read
   keeps each cached pool the run did not print, as a `cache` row, where the
-  old tool showed only the run's rows. The old flat bucket
+  old tool showed only the run's rows. The daemon (never a command run by
+  hand) also re-reads an account nobody uses: when its newest reading is
+  older than `stale_refresh_s` (an hour; -1 turns it off), or a pool's reset
+  has passed since that pool was read (one run, `blocked_grace_s` after the
+  reset). A failed run waits a full interval. The old flat bucket
   array (`agy_status_json_p=y`) is not ported.
 - Native engine: one extra dotfile, `.blocked-state` (the blocked groups and
   their resets, for per-family grace); an unreadable idle time or a failed

@@ -151,6 +151,11 @@ type Reader struct {
 	// CacheOnly never runs agy: a missing or empty cache is an error, as
 	// agy_status_cache_only_p=y made it.
 	CacheOnly bool
+	// StaleRefresh lets reads re-read an account whose reading is old or
+	// predates a reset (see refreshIfStale). Only the daemon sets it: it
+	// reads every account each minute anyway, while a command run by hand
+	// should not stall on a slow-path run it did not ask for.
+	StaleRefresh bool
 
 	mu       sync.Mutex
 	lastSlow map[string]time.Time
@@ -332,6 +337,9 @@ func (r *Reader) quota(ctx context.Context, a Account, force bool, now time.Time
 	if res, ok := r.refreshIfUsed(ctx, a, rows, now); ok {
 		return res
 	}
+	if res, ok := r.refreshIfStale(ctx, a, rows, now); ok {
+		return res
+	}
 	res := readResult{source: "statusline", captures: map[string]float64{}}
 	oldest, undated := int64(0), false
 	var sources []string
@@ -428,6 +436,59 @@ func (r *Reader) refreshIfUsed(ctx context.Context, a Account, rows []cacheRow, 
 		return readResult{}, false
 	}
 	res := r.slow(ctx, a, now, "agy (used since the cache was written)")
+	if res.err != nil {
+		return readResult{}, false
+	}
+	return res, true
+}
+
+// refreshIfStale keeps the reading of an account nobody is using current.
+// Without it, an idle account's cache, or one used only from another
+// device, is served for days as if it were the account's quota. It runs the
+// slow path (no quota spent) when the newest reading is older than
+// stale_refresh_s (default an hour), or when a pool's reset has passed
+// since that pool was read, blocked_grace_s after the reset so agy has
+// rolled the window over. lastSlow spaces the runs: a failed run waits a
+// full interval, and a passed reset triggers at most one run, even when the
+// run does not print that pool again. ok is false when the cache should be
+// served as it is, as after a failed run.
+func (r *Reader) refreshIfStale(ctx context.Context, a Account, rows []cacheRow, now time.Time) (readResult, bool) {
+	if !r.StaleRefresh || r.CacheOnly || r.cfg.Agy.StaleRefreshS < 0 {
+		return readResult{}, false
+	}
+	s := r.cfg.Agy.StaleRefreshS
+	if s == 0 {
+		s = 3600 // a config built without config.Load's defaults
+	}
+	grace := r.cfg.Poll.BlockedGraceS
+	if grace <= 0 {
+		grace = 90
+	}
+	interval := time.Duration(s) * time.Second
+	r.mu.Lock()
+	last, ran := r.lastSlow[a.Name]
+	r.mu.Unlock()
+	nowS := float64(now.Unix())
+	newest := -1.0
+	why := ""
+	for _, row := range rows {
+		newest = math.Max(newest, row.Captured)
+		reset := row.ResetsAt
+		if why == "" && reset > row.Captured && reset+float64(grace) <= nowS && (!ran || float64(last.Unix()) < reset) {
+			family, window := render.BucketNames(row.ID, row.Group, row.Label)
+			why = "agy (" + strings.TrimSpace(family+" "+window) + " reset since it was read)"
+		}
+	}
+	if why == "" {
+		if newest >= 0 && now.Sub(time.Unix(int64(newest), 0)) < interval {
+			return readResult{}, false
+		}
+		if ran && now.Sub(last) < interval && now.Sub(last) >= 0 {
+			return readResult{}, false
+		}
+		why = "agy (reading older than " + ageFmt(s) + ")"
+	}
+	res := r.slow(ctx, a, now, why)
 	if res.err != nil {
 		return readResult{}, false
 	}
